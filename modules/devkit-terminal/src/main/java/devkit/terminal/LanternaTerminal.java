@@ -3,7 +3,10 @@ package devkit.terminal;
 import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.screen.Screen;
+import com.googlecode.lanterna.screen.TerminalScreen;
+import com.googlecode.lanterna.terminal.AnsiTerminal;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
+import com.googlecode.lanterna.terminal.Terminal;
 import devkit.terminal.colors.TerminalColor;
 import devkit.terminal.input.Key;
 import devkit.terminal.input.KeyEvent;
@@ -31,8 +34,20 @@ public class LanternaTerminal implements Terminal {
   private TerminalColor currentBackground = TerminalColor.DEFAULT_BACKGROUND;
 
   public LanternaTerminal() throws IOException {
-    DefaultTerminalFactory factory = new DefaultTerminalFactory();
-    this.screen = factory.createScreen();
+    com.googlecode.lanterna.terminal.Terminal lanternaTerminal;
+    if (System.getProperty("os.name").startsWith("Windows")) {
+      // On Windows, bypass DefaultTerminalFactory.createScreen() to avoid the
+      // javaw/stty issues:
+      // - createWindowsTerminal() requires javaw (not java)
+      // - The Cygwin fallback requires stty.exe which may not be installed
+      // AnsiTerminal uses escape codes via the console directly, which works
+      // with java (not javaw) and without stty on Windows 10+.
+      lanternaTerminal = AnsiTerminal.createDefault();
+    } else {
+      DefaultTerminalFactory factory = new DefaultTerminalFactory();
+      lanternaTerminal = factory.createTerminal();
+    }
+    this.screen = new TerminalScreen(lanternaTerminal);
     this.screen.startScreen();
     LOG.debug("Lanterna terminal started: {}x{}",
         screen.getTerminalSize().getColumns(), screen.getTerminalSize().getRows());
