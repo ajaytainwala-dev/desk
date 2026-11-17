@@ -1,0 +1,28 @@
+# DevKit gitignore
+
+# Build outputs
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+~*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution artifacts (do not commit binaries)
+*.exe
+*.zip
+*.tar.gz
+*.jar
+packaging/**/native/
+packaging/**/portable/

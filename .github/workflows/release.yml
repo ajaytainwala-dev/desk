@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Validate tag format
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: tag '$TAG' does not match vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          echo "Release version: $TAG"
+      - name: Verify version matches tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          POM_VERSION=$(grep -m1 '<version>' pom.xml | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' | tr -d ' ')
+          if [ "$POM_VERSION" != "${TAG#v}"-SNAPSHOT ]; then
+            echo "Warning: pom.xml version ($POM_VERSION) does not match tag ($TAG)."
+            echo "         Expected: ${TAG#v}-SNAPSHOT"
+          fi
+
+  build-native:
+    name: Build native artifacts
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up JDK (GraalVM)
+        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        with:
+          distribution: graalvm
+          java-version: '23'
+          cache: maven
+      - name: Install native-image component
+        run: |
+          gu install native-image || native-image --version
+      - name: Build all modules
+        run: |
+          ./mvnw -B -DskipTests package
+      - name: Build native image
+        shell: bash
+        run: |
+          GRAALVM_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+          export GRAALVM_HOME
+          chmod +x packaging/native-image/build-native.sh
+          ./packaging/native-image/build-native.sh devkit
+      - name: Upload native artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        with:
+          name: devkit-native-${{ matrix.os }}
+          path: dist/native/devkit*
+          retention-days: 90
+
+  build-portable:
+    name: Build portable runtime
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up JDK
+        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        with:
+          distribution: temurin
+          java-version: '23'
+          cache: maven
+      - name: Build all modules
+        run: |
+          ./mvnw -B -DskipTests package
+      - name: Build jlink portable distribution
+        run: |
+          chmod +x packaging/jlink/build-jlink.sh
+          ./packaging/jlink/build-jlink.sh dist/devkit-portable
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        with:
+          name: devkit-portable
+          path: dist/devkit-portable/**
+          retention-days: 90
+
+  release:
+    name: Create GitHub release
+    needs: [build-native, build-portable]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Download all artifacts
+        uses: actions/download-artifact@fb455958497e23a075e7deec8203461e84e3b131 # v4.1.7
+        with:
+          path: dist/artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd dist/artifacts
+          for f in *; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" > "${f}.sha256"
+            fi
+          done
+      - name: Create release
+        uses: softprops/action-gh-release@de250e64c09547fd5809d9dd28405d2d3c32c68f # v2.0.3
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref }}
+          generate_release_notes: true
+          files: |
+            dist/artifacts/*
+            dist/artifacts/*.sha256
+          draft: false
+          prerelease: false

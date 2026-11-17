@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate & structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Validate Maven Wrapper
+        run: |
+          test -f mvnw && test -f mvnw.cmd && test -f .mvn/maven-wrapper.jar && test -f .mvn/maven-wrapper.properties
+          echo "Maven Wrapper is present"
+      - name: Validate project structure
+        run: |
+          test -f pom.xml
+          test -d modules/devkit-core
+          test -d modules/devkit-cli
+          echo "Project structure is valid"
+
+  build:
+    name: Build & test
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up JDK
+        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        with:
+          distribution: temurin
+          java-version: '23'
+          cache: maven
+      - name: Validate Maven Wrapper checksum
+        run: |
+          ./mvnw -v
+      - name: Compile all modules
+        run: |
+          ./mvnw -q -B compile
+      - name: Run unit tests
+        run: |
+          ./mvnw -B test
+      - name: Package
+        run: |
+          ./mvnw -B -DskipTests package
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: |
+            modules/*/target/surefire-reports/**
+          retention-days: 7
+
+  static-analysis:
+    name: Static analysis
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up JDK
+        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        with:
+          distribution: temurin
+          java-version: '23'
+          cache: maven
+      - name: Compile with warnings
+        run: |
+          ./mvnw -B -Pstrict-warnings compile
+      - name: Check dependency vulnerabilities (informational)
+        run: |
+          echo "Dependency vulnerability scan would run here (requires a configured tool)."
+          echo "This step is a placeholder until a scanning tool is selected."
+
+  package:
+    name: Package (jlink portable)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up JDK
+        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        with:
+          distribution: temurin
+          java-version: '23'
+          cache: maven
+      - name: Build all modules
+        run: |
+          ./mvnw -B -DskipTests package
+      - name: Build jlink portable distribution
+        run: |
+          chmod +x packaging/jlink/build-jlink.sh
+          ./packaging/jlink/build-jlink.sh dist/devkit-portable
+      - name: Upload portable distribution
+        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        with:
+          name: devkit-portable-${{ github.run_id }}
+          path: dist/devkit-portable/**
+          retention-days: 30

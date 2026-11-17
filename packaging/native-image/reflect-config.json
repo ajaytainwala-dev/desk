@@ -1,0 +1,70 @@
+[
+  {
+    "name": "devkit.cli.Command",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.cli.VersionCommand",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.cli.HelpCommand",
+    "methods": [{"name": "<init>", "parameterTypes": ["devkit.cli.CommandRegistry"]}]
+  },
+  {
+    "name": "devkit.cli.EditCommand",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.cli.FmtCommand",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.cli.CompileCommand",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.cli.RunCommand",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.editor.Editor",
+    "methods": [{"name": "<init>", "parameterTypes": ["java.lang.String"]}]
+  },
+  {
+    "name": "devkit.editor.components.EditorRenderer",
+    "methods": [{"name": "<init>", "parameterTypes": ["devkit.terminal.Terminal", "devkit.editor.Editor"]}]
+  },
+  {
+    "name": "devkit.formatter.Formatter",
+    "methods": [{"name": "<init>", "parameterTypes": []}, {"name": "<init>", "parameterTypes": ["devkit.formatter.FormattingConfig"]}]
+  },
+  {
+    "name": "devkit.formatter.FormattingConfig$Builder",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.java.JdkDiscovery",
+    "methods": [{"name": "preferredJdk", "parameterTypes": []}]
+  },
+  {
+    "name": "devkit.java.JavaSourceCompiler",
+    "methods": [{"name": "compile", "parameterTypes": ["java.nio.file.Path", "java.nio.file.Path", "java.util.List"]}]
+  },
+  {
+    "name": "devkit.java.JavaRunner",
+    "methods": [{"name": "run", "parameterTypes": ["java.lang.String", "java.util.List", "java.util.List"]}]
+  },
+  {
+    "name": "org.slf4j.LoggerFactory",
+    "methods": [{"name": "getLogger", "parameterTypes": ["java.lang.Class"]}]
+  },
+  {
+    "name": "com.googlecode.lanterna.TerminalFactory",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "com.googlecode.lanterna.input.Key",
+    "fields": [{"name": "kind"}, {"name": "character"}]
+  }
+]

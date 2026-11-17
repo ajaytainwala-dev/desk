@@ -1,0 +1,179 @@
+#!/bin/bash
+# Build a jlink portable runtime distribution for DevKit (Linux/macOS).
+#
+# Usage:
+#   ./packaging/jlink/build-jlink.sh [output-dir]
+#
+# Output layout (default: dist/devkit-portable/):
+#   bin/
+#     devkit            (shell launcher)
+#   lib/
+#     devkit-cli-...-uber.jar
+#   runtime/
+#     bin/java          (custom jlink JRE)
+#   config/
+#   README.txt
+
+set -euo pipefail
+
+OUTPUT_DIR="${1:-dist/devkit-portable}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+echo "=== DevKit jlink Portable Build ==="
+echo "Repo root: $REPO_ROOT"
+echo "Output dir: $OUTPUT_DIR"
+
+# Step 1: Determine Java home
+JAVA_HOME="${JAVA_HOME:-}"
+if [ -z "$JAVA_HOME" ]; then
+  JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 | grep 'java.home' | cut -d= -f2 | tr -d ' ')
+fi
+if [ -z "$JAVA_HOME" ]; then
+  echo "Error: JAVA_HOME is not set and could not be detected." >&2
+  exit 1
+fi
+echo "Using JAVA_HOME: $JAVA_HOME"
+
+JAVA_EXE="$JAVA_HOME/bin/java"
+JLINK_EXE="$JAVA_HOME/bin/jlink"
+
+if [ ! -x "$JLINK_EXE" ]; then
+  echo "Error: jlink not found at $JLINK_EXE. A JDK is required (not just a JRE)." >&2
+  exit 1
+fi
+
+# Step 2: Build all modules
+echo ""
+echo "[1/4] Building Maven modules..."
+"$REPO_ROOT/mvnw" -B -q -DskipTests package
+
+# Step 3: Create output directory structure
+echo ""
+echo "[2/4] Creating distribution layout..."
+mkdir -p "$REPO_ROOT/$OUTPUT_DIR"
+DIST_DIR="$(cd "$REPO_ROOT/$OUTPUT_DIR" && pwd)"
+BIN_DIR="$DIST_DIR/bin"
+LIB_DIR="$DIST_DIR/lib"
+RUNTIME_DIR="$DIST_DIR/runtime"
+CONFIG_DIR="$DIST_DIR/config"
+
+mkdir -p "$BIN_DIR" "$LIB_DIR" "$RUNTIME_DIR" "$CONFIG_DIR"
+
+# Step 4: Build jlink runtime
+echo ""
+echo "[3/4] Building jlink runtime image..."
+
+JLINK_MODULES=(
+  java.base
+  java.logging
+  java.xml
+  java.naming
+  java.security.jgss
+  java.security.sasl
+  jdk.compiler
+  jdk.unsupported
+  jdk.crypto.ec
+)
+MODULE_LIST=$(IFS=','; echo "${JLINK_MODULES[*]}")
+
+echo "jlink modules: $MODULE_LIST"
+
+"$JLINK_EXE" \
+  --module-path "$JAVA_HOME/jmods" \
+  --add-modules "$MODULE_LIST" \
+  --output "$RUNTIME_DIR" \
+  --compress=2 \
+  --no-header-files \
+  --no-man-pages \
+  --strip-native-commands \
+  --vm=server
+
+RUNTIME_JAVA="$RUNTIME_DIR/bin/java"
+if [ ! -x "$RUNTIME_JAVA" ]; then
+  echo "Error: jlink did not produce runtime/bin/java at $RUNTIME_JAVA" >&2
+  exit 1
+fi
+echo "jlink runtime created at $RUNTIME_DIR"
+
+# Step 5: Copy application JARs
+echo ""
+echo "[4/4] Copying application JARs..."
+
+UBER_JAR=$(ls "$REPO_ROOT/modules/devkit-cli/target"/devkit-cli-*.jar 2>/dev/null | grep -v original | head -1)
+if [ -z "$UBER_JAR" ]; then
+  echo "Error: Uber JAR not found in modules/devkit-cli/target" >&2
+  exit 1
+fi
+
+cp "$UBER_JAR" "$LIB_DIR/"
+echo "Copied: $(basename "$UBER_JAR")"
+
+# Step 6: Create launch scripts
+echo ""
+echo "Creating launch scripts..."
+
+cat > "$BIN_DIR/devkit" << 'LAUNCHER'
+#!/bin/sh
+# DevKit launcher
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
+APP_JAR="$SCRIPT_DIR/../lib/devkit-cli-0.1.0-SNAPSHOT.jar"
+
+if [ ! -x "$RUNTIME_JAVA" ]; then
+  echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
+  exit 1
+fi
+
+if [ ! -f "$APP_JAR" ]; then
+  echo "Error: application JAR not found at $APP_JAR" >&2
+  exit 1
+fi
+
+exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
+LAUNCHER
+chmod +x "$BIN_DIR/devkit"
+
+# README
+cat > "$DIST_DIR/README.txt" << 'README'
+DevKit Portable Distribution
+============================
+
+This distribution contains a custom Java runtime (built with jlink) and the
+DevKit application. No system Java installation is required.
+
+Directory layout:
+  bin/
+    devkit        - Shell launcher (Git Bash, WSL, Linux, macOS)
+  lib/
+    devkit-cli-*.jar   - Application JAR (all dependencies embedded)
+  runtime/
+    Custom JRE (jlink image) - contains only the JDK modules needed by DevKit
+  config/
+    Configuration files (created on first run)
+
+Usage:
+  Linux/macOS: bin/devkit [command] [args]
+  Git Bash:    ./bin/devkit [command] [args]
+
+Available commands:
+  version  - Print the application version
+  help     - Print available commands
+  edit     - Open a file in the terminal editor
+  fmt      - Format a Java source file (use --check to verify)
+  compile  - Compile a Java source file
+  run      - Run a compiled Java class
+
+Examples:
+  bin/devkit version
+  bin/devkit fmt src/Main.java
+  bin/devkit compile src/Main.java
+  bin/devkit run Main
+
+No installation required: extract this archive anywhere and run the launcher.
+README
+
+echo ""
+echo "=== Build complete ==="
+echo "Distribution: $DIST_DIR"
+echo "Launcher:     $BIN_DIR/devkit"

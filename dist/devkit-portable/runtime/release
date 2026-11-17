@@ -1,0 +1,2 @@
+JAVA_VERSION="23.0.1"
+MODULES="java.base java.compiler java.logging java.security.sasl java.naming java.security.jgss java.xml jdk.internal.opt jdk.zipfs jdk.compiler jdk.crypto.ec jdk.unsupported"
