@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -11,15 +12,23 @@ concurrency:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Validate tag format
         run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "Manual run or non-tag event; skipping tag validation."
+            exit 0
+          fi
           TAG=${GITHUB_REF#refs/tags/}
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Error: tag '$TAG' does not match vMAJOR.MINOR.PATCH"
@@ -28,6 +37,10 @@ jobs:
           echo "Release version: $TAG"
       - name: Verify version matches tag
         run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "Manual run or non-tag event; skipping version check."
+            exit 0
+          fi
           TAG=${GITHUB_REF#refs/tags/}
           POM_VERSION=$(grep -m1 '<version>' pom.xml | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' | tr -d ' ')
           if [ "$POM_VERSION" != "${TAG#v}"-SNAPSHOT ]; then
@@ -45,31 +58,41 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up JDK (GraalVM)
-        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: graalvm
           java-version: '23'
           cache: maven
       - name: Install native-image component
         run: |
-          gu install native-image || native-image --version
+          if command -v native-image >/dev/null 2>&1; then
+            native-image --version
+          else
+            gu install native-image || true
+            native-image --version
+          fi
       - name: Build all modules
-        run: |
-          ./mvnw -B -DskipTests package
+        run: bash mvnw -B -DskipTests package
       - name: Build native image
-        shell: bash
         run: |
-          GRAALVM_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+          GRAALVM_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
           export GRAALVM_HOME
-          chmod +x packaging/native-image/build-native.sh
-          ./packaging/native-image/build-native.sh devkit
+          bash packaging/native-image/build-native.sh devkit
+      - name: Normalize native artifact names
+        run: |
+          mkdir -p dist/upload
+          for f in dist/native/devkit*; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f")
+            cp "$f" "dist/upload/${name}-${{ matrix.os }}"
+          done
       - name: Upload native artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: devkit-native-${{ matrix.os }}
-          path: dist/native/devkit*
+          path: dist/upload/*
           retention-days: 90
 
   build-portable:
@@ -78,22 +101,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '23'
           cache: maven
       - name: Build all modules
-        run: |
-          ./mvnw -B -DskipTests package
+        run: bash mvnw -B -DskipTests package
       - name: Build jlink portable distribution
-        run: |
-          chmod +x packaging/jlink/build-jlink.sh
-          ./packaging/jlink/build-jlink.sh dist/devkit-portable
+        run: bash packaging/jlink/build-jlink.sh dist/devkit-portable
       - name: Upload portable artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: devkit-portable
           path: dist/devkit-portable/**
@@ -109,16 +129,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
       - name: Build Rust editor (release)
         working-directory: modules/devkit-editor-rs
         run: cargo build --release
       - name: Upload Rust binary
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: devkit-editor-rs-${{ matrix.os }}
           path: modules/devkit-editor-rs/target/release/devkit-editor-rs*
@@ -126,32 +144,28 @@ jobs:
 
   release:
     name: Create GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [build-native, build-portable, build-rust]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Download all artifacts
-        uses: actions/download-artifact@fb455958497e23a075e7deec8203461e84e3b131 # v4.1.7
+        uses: actions/download-artifact@v4
         with:
           path: dist/artifacts
-          merge-multiple: true
       - name: Generate checksums
         run: |
           cd dist/artifacts
-          for f in *; do
-            if [ -f "$f" ]; then
-              sha256sum "$f" > "${f}.sha256"
-            fi
+          find . -type f ! -name '*.sha256' -print0 | while IFS= read -r -d '' f; do
+            sha256sum "$f" > "${f}.sha256"
           done
       - name: Create release
-        uses: softprops/action-gh-release@de250e64c09547fd5809d9dd28405d2d3c32c68f # v2.0.3
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
-          name: Release ${{ github.ref }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           generate_release_notes: true
-          files: |
-            dist/artifacts/*
-            dist/artifacts/*.sha256
+          files: dist/artifacts/**/*
           draft: false
           prerelease: false

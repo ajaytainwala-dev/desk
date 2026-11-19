@@ -6,7 +6,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -59,6 +59,7 @@ impl MenuTab {
                 "Select All (Ctrl+A)",
                 "Find (Ctrl+F)",
                 "Replace (Ctrl+H)",
+                "Format (F9 / Shift+Alt+F)",
             ],
             MenuTab::View => vec![
                 "Toggle Explorer (F3)",
@@ -174,12 +175,21 @@ pub struct Job {
     pub id: u64,
     pub name: String,
     pub child: Arc<Mutex<Option<Child>>>,
+    pub stdin: Option<ChildStdin>,
     pub receiver: Receiver<JobMessage>,
     pub started_at: Instant,
     pub status: JobStatus,
 }
 
 impl Job {
+    pub fn send_input(&mut self, line: &str) -> std::io::Result<()> {
+        if let Some(stdin) = self.stdin.as_mut() {
+            std::io::Write::write_all(stdin, format!("{}\n", line).as_bytes())?;
+            std::io::Write::flush(stdin)?;
+        }
+        Ok(())
+    }
+
     pub fn stop(&self) {
         if let Ok(mut guard) = self.child.lock()
             && let Some(child) = guard.as_mut()
@@ -244,6 +254,8 @@ pub struct App {
 
     pub run_button_x: u16,
     pub run_button_w: u16,
+    pub format_button_x: u16,
+    pub format_button_w: u16,
     pub tab_close_positions: Vec<(u16, u16, u16, usize)>,
 
     pub bottom_panel_height: u16,
@@ -289,8 +301,11 @@ pub struct App {
     pub toasts: Vec<ToastNotification>,
     pub show_help: bool,
     pub last_edit_time: Instant,
+    pub auto_save_failures: u32,
+    pub last_auto_save_attempt: Instant,
 
     pub job: Option<Job>,
+    pub pending_run: Option<(String, PathBuf)>,
     pub next_job_id: u64,
     pub bracket_match: Option<(usize, usize)>,
     pub pending_key: Option<char>,
@@ -309,11 +324,12 @@ impl App {
         Self::apply_config(&config, &mut buffer);
 
         let current_file = initial_path.map(|p| p.to_path_buf());
-        let cwd = current_file
-            .as_ref()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| PathBuf::from("."));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| {
+            current_file
+                .as_ref()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
 
         let mut explorer = FileNode {
             name: cwd
@@ -346,6 +362,8 @@ impl App {
             menu_dropdown_rect: None,
             run_button_x: 0,
             run_button_w: 0,
+            format_button_x: 0,
+            format_button_w: 0,
             tab_close_positions: Vec::new(),
             bottom_panel_height: 12,
             bottom_panel_rect: None,
@@ -381,11 +399,15 @@ impl App {
             current_file,
             clipboard: String::new(),
             last_terminal_size: (80, 24),
-            status_message: "Ready — F1 help | Ctrl+F find | F5 run | Ctrl+J terminal".to_string(),
+            status_message: "Ready — F1 help | Ctrl+F find | F9 format | F5 run | Ctrl+J terminal"
+                .to_string(),
             toasts: Vec::new(),
             show_help: false,
             last_edit_time: Instant::now(),
+            auto_save_failures: 0,
+            last_auto_save_attempt: Instant::now(),
             job: None,
+            pending_run: None,
             next_job_id: 1,
             bracket_match: None,
             pending_key: None,
@@ -427,7 +449,7 @@ impl App {
             for entry in entries_vec {
                 let p = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') || name == "target" || name == "node_modules" {
+                if matches!(name.as_str(), ".git" | "target" | "node_modules") {
                     continue;
                 }
                 let is_dir = p.is_dir();
@@ -555,11 +577,21 @@ impl App {
         let mut buffer = Buffer::from_file(path)?;
         Self::apply_config(&self.config, &mut buffer);
         self.buffer = buffer;
+        self.buffer.cursor = Default::default();
+        self.buffer.selection = None;
+        self.buffer.scroll_top = 0;
+        self.buffer.scroll_left = 0;
         self.language = Language::from_path(Some(path));
         self.current_file = Some(path.to_path_buf());
         self.mode = Mode::Normal;
+        self.bracket_match = None;
+        self.pending_key = None;
+        self.explorer_focused = false;
+        self.terminal_focused = false;
+        self.last_edit_time = Instant::now();
         self.buffer.end_edit_group();
         self.toast(&format!("Opened {}", path.display()), "INFO");
+        self.refresh_explorer();
         Ok(())
     }
 
@@ -578,12 +610,18 @@ impl App {
     }
 
     pub fn new_file(&mut self, name: Option<&str>) {
-        self.show_command_line = true;
-        self.command_line = match name {
-            Some(n) if !n.is_empty() => format!(":new {}", n),
-            _ => ":new ".to_string(),
-        };
+        self.buffer = Buffer::new_empty();
+        if let Some(name) = name.filter(|n| !n.is_empty()) {
+            self.buffer.path = Some(PathBuf::from(name));
+        }
+        Self::apply_config(&self.config, &mut self.buffer);
+        self.current_file = self.buffer.path.clone();
+        self.language = Language::from_path(self.current_file.as_deref());
         self.mode = Mode::Normal;
+        self.bracket_match = None;
+        self.pending_key = None;
+        self.last_edit_time = Instant::now();
+        self.toast("New file", "INFO");
     }
 
     pub fn close_current_file(&mut self) {
@@ -592,6 +630,14 @@ impl App {
         self.current_file = None;
         self.language = Language::Generic;
         self.mode = Mode::Normal;
+        self.bracket_match = None;
+        self.pending_key = None;
+        self.show_command_line = false;
+        self.auto_save_failures = 0;
+        self.last_edit_time = Instant::now();
+        self.last_auto_save_attempt = Instant::now();
+        self.pending_run = None;
+        self.tab_close_positions.clear();
         self.toast("Closed file", "INFO");
     }
 
@@ -599,7 +645,7 @@ impl App {
         if self.buffer.path.is_none() {
             self.show_command_line = true;
             self.command_line = ":w ".to_string();
-            self.toast("Enter a path to save this file", "INFO");
+            self.toast("Enter a path to save this file (Save As)", "INFO");
             return Ok(());
         }
         let path = self.buffer.path.clone().unwrap();
@@ -613,9 +659,24 @@ impl App {
         {
             fs::create_dir_all(parent)?;
         }
-        self.buffer.save_as(path)?;
+        if let Err(e) = self.buffer.save_as(path) {
+            let kind = e.kind();
+            let backup_name = path
+                .file_name()
+                .map(|n| format!("{}.devkit-backup", n.to_string_lossy()))
+                .unwrap_or_else(|| "devkit-backup.txt".to_string());
+            let backup = path.with_file_name(backup_name);
+            let detail = match fs::write(&backup, self.buffer.text()) {
+                Ok(()) => format!("backup written to {}", backup.display()),
+                Err(backup_err) => format!("backup failed: {}", backup_err),
+            };
+            return Err(std::io::Error::new(kind, format!("{}; {}", e, detail)));
+        }
+        self.auto_save_failures = 0;
+        self.last_auto_save_attempt = Instant::now();
         self.current_file = Some(path.to_path_buf());
         self.language = Language::from_path(Some(path));
+        self.last_edit_time = Instant::now();
         self.refresh_explorer();
         self.toast(&format!("Saved {}", path.display()), "SUCCESS");
         Ok(())
@@ -717,15 +778,32 @@ impl App {
 
     pub fn tick(&mut self) {
         self.poll_job();
-        if self.config.auto_save
-            && self.buffer.modified
-            && self.buffer.path.is_some()
-            && self.last_edit_time.elapsed() > Duration::from_millis(800)
-        {
-            if let Err(e) = self.save_current() {
-                self.toast(&format!("Auto-save failed: {}", e), "ERROR");
+        if !self.config.auto_save || !self.buffer.modified || self.buffer.path.is_none() {
+            return;
+        }
+        if self.last_edit_time.elapsed() < Duration::from_millis(800) {
+            return;
+        }
+        let retry_delay = if self.auto_save_failures == 0 {
+            Duration::from_millis(800)
+        } else {
+            Duration::from_secs(2u64.saturating_pow(self.auto_save_failures.min(5)))
+        };
+        if self.last_auto_save_attempt.elapsed() < retry_delay {
+            return;
+        }
+        self.last_auto_save_attempt = Instant::now();
+        if let Err(e) = self.save_current() {
+            self.auto_save_failures += 1;
+            if self.auto_save_failures == 1 || self.auto_save_failures.is_multiple_of(5) {
+                self.toast(
+                    &format!(
+                        "Auto-save failed ({} try); keeping changes and retrying: {}",
+                        self.auto_save_failures, e
+                    ),
+                    "WARN",
+                );
             }
-            self.last_edit_time = Instant::now();
         }
     }
 
@@ -1101,11 +1179,12 @@ impl App {
         let mut child = Command::new(program)
             .args(args)
             .current_dir(&self.cwd)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", program, e)))?;
+        let stdin = child.stdin.take();
         let stdout = child
             .stdout
             .take()
@@ -1181,6 +1260,7 @@ impl App {
             id,
             name,
             child: child_arc,
+            stdin,
             receiver: rx,
             started_at: Instant::now(),
             status: JobStatus::Running,
@@ -1263,6 +1343,26 @@ impl App {
             );
             self.terminal_scroll = 0;
             self.output_scroll = 0;
+
+            if success && !cancelled && name.starts_with("javac ") {
+                if let Some((class_name, classpath)) = self.pending_run.take() {
+                    let java = Self::java_tool("java");
+                    let args = vec![
+                        "-cp".to_string(),
+                        classpath.to_string_lossy().to_string(),
+                        class_name.clone(),
+                    ];
+                    self.push_output(
+                        &format!("$ {} -cp {} {}", java, classpath.display(), class_name),
+                        OutputKind::Info,
+                    );
+                    if let Err(e) = self.spawn_job(format!("run {}", class_name), &java, &args) {
+                        self.toast(&format!("Cannot start java: {}", e), "ERROR");
+                    }
+                }
+            } else if !success || cancelled {
+                self.pending_run = None;
+            }
         }
     }
 
@@ -1276,6 +1376,171 @@ impl App {
             return;
         }
         self.toast("No running command to stop", "WARN");
+    }
+
+    fn java_tool(name: &str) -> String {
+        if let Some(home) = std::env::var_os("JAVA_HOME") {
+            let exe = PathBuf::from(home).join("bin").join(if cfg!(windows) {
+                format!("{}.exe", name)
+            } else {
+                name.to_string()
+            });
+            if exe.is_file() {
+                return exe.to_string_lossy().to_string();
+            }
+        }
+        name.to_string()
+    }
+
+    fn java_tool_available(tool: &str) -> bool {
+        Command::new(tool)
+            .arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    fn absolute_source(path: &Path, cwd: &Path) -> PathBuf {
+        let candidate = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            cwd.join(path)
+        };
+        candidate.canonicalize().unwrap_or(candidate)
+    }
+
+    fn find_devkit_jar() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let mut dir = exe.parent()?;
+        for _ in 0..8 {
+            let candidate = dir
+                .join("modules")
+                .join("devkit-cli")
+                .join("target")
+                .join("devkit-cli-0.1.0-SNAPSHOT-uber.jar");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            dir = dir.parent()?;
+        }
+        None
+    }
+
+    fn format_text_with_devkit(&self, source: &str) -> Result<String, String> {
+        let jar = Self::find_devkit_jar()
+            .ok_or_else(|| "DevKit formatter jar not found; build with mvnw package".to_string())?;
+        let java = Self::java_tool("java");
+        if !Self::java_tool_available(&java) {
+            return Err("java not found; set JAVA_HOME or add java to PATH".to_string());
+        }
+        let mut child = Command::new(&java)
+            .arg("-jar")
+            .arg(&jar)
+            .arg("fmt")
+            .arg("--stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cannot start java: {}", e))?;
+        {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| "formatter stdin unavailable".to_string())?;
+            std::io::Write::write_all(&mut stdin, source.as_bytes())
+                .map_err(|e| format!("cannot write to formatter: {}", e))?;
+        }
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("formatter failed: {}", e))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+        String::from_utf8(output.stdout)
+            .map_err(|e| format!("formatter emitted invalid UTF-8: {}", e))
+    }
+
+    fn format_java_basic(source: &str, tab_width: usize, use_spaces: bool) -> String {
+        let unit = if use_spaces {
+            " ".repeat(tab_width)
+        } else {
+            "\t".to_string()
+        };
+        let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
+        let expanded = normalized.replace('{', " {\n").replace('}', "\n}");
+        let mut depth = 0usize;
+        let mut out = Vec::new();
+        for raw in expanded.lines() {
+            let line = raw.trim();
+            if line.is_empty() {
+                out.push(String::new());
+                continue;
+            }
+            let opens = line.chars().filter(|&c| c == '{').count();
+            let closes = line.chars().filter(|&c| c == '}').count();
+            let leading_closes = line.chars().take_while(|&c| c == '}').count();
+            let indent = depth.saturating_sub(leading_closes);
+            out.push(format!("{}{}", unit.repeat(indent), line));
+            depth = depth.saturating_add(opens).saturating_sub(closes);
+        }
+        let formatted = out.join("\n");
+        if normalized.ends_with('\n') {
+            format!("{}\n", formatted)
+        } else {
+            formatted
+        }
+    }
+
+    pub fn format_current(&mut self) {
+        let is_java = self.language == Language::Java
+            || self
+                .current_file
+                .as_deref()
+                .and_then(|p| p.extension())
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("java"));
+        if !is_java {
+            self.toast("Formatting is available for Java files", "WARN");
+            return;
+        }
+        let original = self.buffer.text();
+        let (formatted, engine) = match Self::format_text_with_devkit(self, &original) {
+            Ok(text) => (text, "DevKit formatter"),
+            Err(e) => {
+                let fallback = Self::format_java_basic(
+                    &original,
+                    self.config.tab_width,
+                    self.config.use_spaces,
+                );
+                if fallback == original {
+                    self.toast(&format!("Format failed: {}", e), "ERROR");
+                    return;
+                }
+                (fallback, "basic formatter")
+            }
+        };
+        if formatted == original {
+            self.toast("Already formatted", "INFO");
+            return;
+        }
+        self.buffer.set_text(&formatted);
+        Self::apply_config(&self.config, &mut self.buffer);
+        self.mark_edited();
+        if self.buffer.path.is_some() {
+            match self.save_current() {
+                Ok(()) => self.toast(&format!("Formatted and saved ({})", engine), "SUCCESS"),
+                Err(e) => self.toast(&format!("Formatted in memory; save failed: {}", e), "WARN"),
+            }
+        } else {
+            self.toast(
+                &format!("Formatted in memory ({}, unsaved)", engine),
+                "SUCCESS",
+            );
+        }
     }
 
     pub fn compile_current_file(&mut self) {
@@ -1296,20 +1561,32 @@ impl App {
             self.toast(&format!("Save failed: {}", e), "ERROR");
             return;
         }
-        let dir = path
+        let source = Self::absolute_source(&path, &self.cwd);
+        let dir = source
             .parent()
             .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("."));
-        let mut args = vec!["-d".to_string(), dir.to_string_lossy().to_string()];
-        args.push(path.to_string_lossy().to_string());
-        self.cwd = dir;
-        self.push_output(&format!("$ javac {}", path.display()), OutputKind::Info);
+            .unwrap_or_else(|| self.cwd.clone());
+        let javac = Self::java_tool("javac");
+        if !Self::java_tool_available(&javac) {
+            self.toast(
+                "javac not found; set JAVA_HOME or add javac to PATH",
+                "ERROR",
+            );
+            return;
+        }
+        let source_str = source.to_string_lossy().to_string();
+        let dir_str = dir.to_string_lossy().to_string();
+        let args = vec!["-d".to_string(), dir_str.clone(), source_str.clone()];
+        self.push_output(
+            &format!("$ {} -d {} {}", javac, dir.display(), source.display()),
+            OutputKind::Info,
+        );
         if let Err(e) = self.spawn_job(
             format!(
                 "javac {}",
-                path.file_name().unwrap_or_default().to_string_lossy()
+                source.file_name().unwrap_or_default().to_string_lossy()
             ),
-            "javac",
+            &javac,
             &args,
         ) {
             self.toast(&format!("Cannot start javac: {}", e), "ERROR");
@@ -1334,26 +1611,51 @@ impl App {
             self.toast(&format!("Save failed: {}", e), "ERROR");
             return;
         }
-        let class_name = path
+        let source = Self::absolute_source(&path, &self.cwd);
+        let dir = source
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| self.cwd.clone());
+        let class_name = source
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("Main")
             .to_string();
-        let dir = path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("."));
-        self.cwd = dir;
-        let source = path.to_string_lossy();
-        let command = format!("javac -d . \"{}\" && java {}", source, class_name);
-        self.push_output(&format!("$ {}", command), OutputKind::Info);
-        let (program, args) = if cfg!(windows) {
-            ("cmd".to_string(), vec!["/C".to_string(), command])
-        } else {
-            ("sh".to_string(), vec!["-c".to_string(), command])
-        };
-        if let Err(e) = self.spawn_job(format!("run {}", class_name), &program, &args) {
-            self.toast(&format!("Cannot start run: {}", e), "ERROR");
+        let javac = Self::java_tool("javac");
+        let java = Self::java_tool("java");
+        if !Self::java_tool_available(&javac) || !Self::java_tool_available(&java) {
+            self.toast(
+                "javac/java not found; set JAVA_HOME or add them to PATH",
+                "ERROR",
+            );
+            return;
+        }
+        let source_str = source.to_string_lossy().to_string();
+        let dir_str = dir.to_string_lossy().to_string();
+        self.show_terminal = true;
+        self.show_output = true;
+        self.terminal_focused = true;
+        self.explorer_focused = false;
+        self.push_output(
+            "Program input: type in the terminal line and press Enter (Esc returns to editor)",
+            OutputKind::Info,
+        );
+        self.pending_run = Some((class_name.clone(), dir.clone()));
+        self.push_output(
+            &format!("$ {} -d {} {}", javac, dir.display(), source.display()),
+            OutputKind::Info,
+        );
+        let args = vec!["-d".to_string(), dir_str, source_str];
+        if let Err(e) = self.spawn_job(
+            format!(
+                "javac {}",
+                source.file_name().unwrap_or_default().to_string_lossy()
+            ),
+            &javac,
+            &args,
+        ) {
+            self.pending_run = None;
+            self.toast(&format!("Cannot start javac: {}", e), "ERROR");
         }
     }
 
@@ -1408,6 +1710,21 @@ impl App {
         }
         self.terminal_history.push(cmd.clone());
         self.terminal_history_index = self.terminal_history.len();
+
+        let job_accepts_input = self
+            .job
+            .as_ref()
+            .is_some_and(|j| j.status == JobStatus::Running && j.stdin.is_some());
+        if job_accepts_input {
+            self.push_output(&format!("> {}", cmd), OutputKind::Info);
+            if let Some(job) = &mut self.job
+                && let Err(e) = job.send_input(&cmd)
+            {
+                self.push_output(&format!("input failed: {}", e), OutputKind::Err);
+            }
+            return;
+        }
+
         self.push_output(&format!("$ {}", cmd), OutputKind::Info);
 
         let parts: Vec<&str> = cmd.split_whitespace().collect();
@@ -1461,8 +1778,9 @@ impl App {
         } else {
             ("sh".to_string(), vec!["-c".to_string(), cmd.clone()])
         };
-        if let Err(e) = self.spawn_job(cmd, &program, &args) {
+        if let Err(e) = self.spawn_job(cmd.clone(), &program, &args) {
             self.push_output(&format!("cannot start command: {}", e), OutputKind::Err);
+            self.toast(&format!("Command failed to start: {}", e), "ERROR");
         }
     }
 
@@ -1644,6 +1962,7 @@ impl App {
                 }
             }
             "compile" | "make" => self.compile_current_file(),
+            "fmt" | "format" => self.format_current(),
             "run" => self.run_current_file(),
             "stop" => self.stop_job(),
             "clear" | "cl" => self.clear_output(),
@@ -1840,6 +2159,94 @@ mod tests {
         handle_key_event(&mut app, key(KeyCode::Left));
         handle_key_event(&mut app, key(KeyCode::Char('y')));
         assert_eq!(app.clipboard, "bc");
+    }
+
+    #[test]
+    fn basic_java_formatter_indents_blocks() {
+        let formatted = App::format_java_basic("class A{void b(){x();}}", 4, true);
+        assert!(formatted.contains("class A {"));
+        assert!(formatted.contains("    void b() {"));
+        assert!(formatted.contains("        x();"));
+    }
+
+    #[test]
+    fn cursor_rendered_on_actual_edited_line() {
+        let mut app = test_app();
+        app.show_explorer = false;
+        app.config.line_numbers = LineNumberMode::Absolute;
+        app.buffer.set_text("one\ntwo\nthree\nfour\nfive");
+        app.buffer.move_to(3, 2);
+
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| crate::ui::render_ui(f, &mut app))
+            .unwrap();
+
+        let inner = app.editor_inner_rect.unwrap();
+        let cursor = terminal.get_cursor_position().unwrap();
+        assert_eq!(cursor.y, inner.y + 3);
+    }
+
+    #[test]
+    fn closing_file_clears_tab_render() {
+        let mut app = test_app();
+        app.show_explorer = false;
+        app.current_file = Some(PathBuf::from("CLOSE_ME_MARKER.java"));
+        app.buffer.path = app.current_file.clone();
+
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| crate::ui::render_ui(f, &mut app))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(rendered.contains("CLOSE_ME_MARKER.java"));
+
+        app.close_current_file();
+        terminal
+            .draw(|f| crate::ui::render_ui(f, &mut app))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(!rendered.contains("CLOSE_ME_MARKER.java"));
+        assert_eq!(app.buffer.text(), "");
+    }
+
+    #[test]
+    fn render_shows_all_visible_lines_from_top() {
+        let mut app = test_app();
+        app.show_explorer = false;
+        app.config.line_numbers = LineNumberMode::None;
+        app.buffer
+            .set_text("line one\nline two\nLINE_THREE_MARKER\nline four");
+        assert_eq!(app.buffer.cursor.line, 0);
+
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| crate::ui::render_ui(f, &mut app))
+            .unwrap();
+
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(rendered.contains("LINE_THREE_MARKER"));
     }
 
     #[test]

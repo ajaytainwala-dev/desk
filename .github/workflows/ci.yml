@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: ['**']
   pull_request:
-    branches: [main, master]
+    branches: ['**']
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.head_ref || github.ref }}
@@ -13,22 +14,28 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   validate:
     name: Validate & structure
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Validate Maven Wrapper
         run: |
-          test -f mvnw && test -f mvnw.cmd && test -f .mvn/maven-wrapper.jar && test -f .mvn/maven-wrapper.properties
+          test -f mvnw && test -f mvnw.cmd
+          test -f .mvn/maven-wrapper.jar && test -f .mvn/maven-wrapper.properties
           echo "Maven Wrapper is present"
       - name: Validate project structure
         run: |
           test -f pom.xml
           test -d modules/devkit-core
           test -d modules/devkit-cli
+          test -d modules/devkit-editor-rs
           echo "Project structure is valid"
 
   build:
@@ -41,32 +48,27 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '23'
           cache: maven
-      - name: Validate Maven Wrapper checksum
-        run: |
-          ./mvnw -v
+      - name: Verify Maven Wrapper
+        run: bash mvnw -v
       - name: Compile all modules
-        run: |
-          ./mvnw -q -B compile
+        run: bash mvnw -q -B compile
       - name: Run unit tests
-        run: |
-          ./mvnw -B test
+        run: bash mvnw -B test
       - name: Package
-        run: |
-          ./mvnw -B -DskipTests package
+        run: bash mvnw -B -DskipTests package
       - name: Upload test reports on failure
         if: failure()
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: test-reports-${{ matrix.os }}
-          path: |
-            modules/*/target/surefire-reports/**
+          path: modules/*/target/surefire-reports/**
           retention-days: 7
 
   static-analysis:
@@ -75,16 +77,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '23'
           cache: maven
       - name: Compile with warnings
-        run: |
-          ./mvnw -B -Pstrict-warnings compile
+        run: bash mvnw -B -Pstrict-warnings compile
       - name: Check dependency vulnerabilities (informational)
         run: |
           echo "Dependency vulnerability scan would run here (requires a configured tool)."
@@ -100,16 +101,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          components: clippy, rustfmt
+      - name: Check formatting
+        working-directory: modules/devkit-editor-rs
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        working-directory: modules/devkit-editor-rs
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: modules/devkit-editor-rs
+        run: cargo test
       - name: Build Rust editor (release)
         working-directory: modules/devkit-editor-rs
         run: cargo build --release
       - name: Upload Rust binary
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: devkit-editor-rs-${{ matrix.os }}
           path: modules/devkit-editor-rs/target/release/devkit-editor-rs*
@@ -121,22 +131,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+        uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@c529510e66171432303e7594e0fbee71275253ed # v4.5.0
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '23'
           cache: maven
       - name: Build all modules
-        run: |
-          ./mvnw -B -DskipTests package
+        run: bash mvnw -B -DskipTests package
       - name: Build jlink portable distribution
-        run: |
-          chmod +x packaging/jlink/build-jlink.sh
-          ./packaging/jlink/build-jlink.sh dist/devkit-portable
+        run: bash packaging/jlink/build-jlink.sh dist/devkit-portable
       - name: Upload portable distribution
-        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: devkit-portable-${{ github.run_id }}
           path: dist/devkit-portable/**

@@ -5,6 +5,7 @@ import devkit.core.logging.Logger;
 import devkit.core.logging.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -66,6 +67,7 @@ public class EditCommand implements Command {
 
     // Launch the Rust TUI editor
     try {
+      LOG.info("launching editor binary: {}", editorBinary);
       ProcessBuilder pb = new ProcessBuilder(editorBinary.toString(), file.toString());
       pb.inheritIO(); // Connect stdio to the parent process
       Process process = pb.start();
@@ -81,35 +83,48 @@ public class EditCommand implements Command {
   }
 
   /**
-   * Locates the Rust TUI editor binary. Checks several locations in order:
-   * <ol>
-   *   <li>{@code modules/devkit-editor-rs/target/release/devkit-editor-rs(.exe)}</li>
-   *   <li>Beside the CLI jar (for portable distributions)</li>
-   * </ol>
+   * Locates the newest available Rust TUI editor binary. Checks the normal
+   * release directory, an alternate release directory, the debug directory,
+   * and the current working directory.
    */
   private Path locateEditorBinary() {
-    // Check the release build directory
-    Path releaseBuild = Paths.get("modules/devkit-editor-rs/target/release")
-        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
-    if (FileSystem.isFile(releaseBuild)) {
-      return releaseBuild.toAbsolutePath();
+    String exeName = isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs";
+    Path releaseBuild = Paths.get("modules/devkit-editor-rs/target/release").resolve(exeName);
+    Path alternateRelease = Paths.get("modules/devkit-editor-rs/target/release-next/release")
+        .resolve(exeName);
+    Path newest = newest(releaseBuild, alternateRelease);
+    if (newest != null) {
+      return newest.toAbsolutePath();
     }
 
-    // Check debug build directory
-    Path debugBuild = Paths.get("modules/devkit-editor-rs/target/debug")
-        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
+    Path debugBuild = Paths.get("modules/devkit-editor-rs/target/debug").resolve(exeName);
     if (FileSystem.isFile(debugBuild)) {
       return debugBuild.toAbsolutePath();
     }
 
-    // Check beside the current working directory
-    Path besideCwd = Paths.get(".")
-        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
+    Path besideCwd = Paths.get(".").resolve(exeName);
     if (FileSystem.isFile(besideCwd)) {
       return besideCwd.toAbsolutePath();
     }
 
     return null;
+  }
+
+  private Path newest(Path first, Path second) {
+    boolean firstExists = FileSystem.isFile(first);
+    boolean secondExists = FileSystem.isFile(second);
+    if (!firstExists) {
+      return secondExists ? second : null;
+    }
+    if (!secondExists) {
+      return first;
+    }
+    try {
+      return Files.getLastModifiedTime(first).toMillis()
+          >= Files.getLastModifiedTime(second).toMillis() ? first : second;
+    } catch (IOException e) {
+      return first;
+    }
   }
 
   private static boolean isWindows() {

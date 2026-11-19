@@ -46,7 +46,19 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    if key.modifiers.contains(KeyModifiers::ALT) && !key.modifiers.contains(KeyModifiers::CONTROL) {
+    if key.code == KeyCode::Char('F')
+        && key.modifiers.contains(KeyModifiers::ALT)
+        && key.modifiers.contains(KeyModifiers::SHIFT)
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        app.format_current();
+        return;
+    }
+
+    if key.modifiers.contains(KeyModifiers::ALT)
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
+        && !key.modifiers.contains(KeyModifiers::SHIFT)
+    {
         match key.code {
             KeyCode::Char('f') | KeyCode::Char('F') => {
                 app.active_menu = MenuTab::File;
@@ -235,6 +247,10 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::F(8) => {
             app.toggle_output();
+            return;
+        }
+        KeyCode::F(9) => {
+            app.format_current();
             return;
         }
         _ => {}
@@ -438,6 +454,7 @@ fn execute_menu_item(app: &mut App, tab: MenuTab, idx: usize) {
             5 => app.select_all(),
             6 => app.open_search(false),
             7 => app.open_search(true),
+            8 => app.format_current(),
             _ => {}
         },
         MenuTab::View => match idx {
@@ -584,20 +601,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             app.buffer.move_word_left();
             app.update_bracket_match();
         }
-        KeyCode::Up => {
-            if app.show_explorer && !app.explorer_focused {
-                app.explorer_focused = true;
-            } else {
-                app.move_up();
-            }
-        }
-        KeyCode::Down => {
-            if app.show_explorer && !app.explorer_focused {
-                app.explorer_focused = true;
-            } else {
-                app.move_down();
-            }
-        }
+        KeyCode::Up => app.move_up(),
+        KeyCode::Down => app.move_down(),
         KeyCode::Left | KeyCode::Char('h') => app.move_left(),
         KeyCode::Right | KeyCode::Char('l') => app.move_right(),
         KeyCode::Enter => {
@@ -736,13 +741,20 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
                     return;
                 }
                 if row > rect.y && row < rect.y + rect.height {
-                    app.terminal_focused = true;
+                    app.terminal_focused = app.show_terminal;
                     app.explorer_focused = false;
                     return;
                 }
             }
 
             if row == 0 {
+                if app.format_button_w > 0
+                    && col >= app.format_button_x
+                    && col < app.format_button_x + app.format_button_w
+                {
+                    app.format_current();
+                    return;
+                }
                 if app.run_button_w > 0
                     && col >= app.run_button_x
                     && col < app.run_button_x + app.run_button_w

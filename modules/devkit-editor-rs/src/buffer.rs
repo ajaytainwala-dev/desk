@@ -1,6 +1,71 @@
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+#[cfg(windows)]
+use std::process::Command;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+#[cfg(windows)]
+fn clear_readonly(path: &Path) -> io::Result<()> {
+    let output = Command::new("attrib").arg("-R").arg(path).output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
+}
+
+#[cfg(not(windows))]
+fn clear_readonly(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(metadata) = fs::metadata(path) {
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(path, permissions)?;
+    }
+    Ok(())
+}
+
+fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("devkit-file");
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = parent.join(format!(
+        ".{}.devkit-tmp-{}-{}",
+        name,
+        std::process::id(),
+        stamp
+    ));
+
+    let result = (|| -> io::Result<()> {
+        fs::write(&tmp, content)?;
+        let _ = clear_readonly(path);
+        if fs::rename(&tmp, path).is_ok() {
+            return Ok(());
+        }
+        let _ = clear_readonly(path);
+        fs::write(path, content)?;
+        let _ = fs::remove_file(&tmp);
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Cursor {
@@ -138,10 +203,11 @@ impl Buffer {
     }
 
     pub fn set_text(&mut self, text: &str) {
-        self.lines = if text.is_empty() {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.lines = if normalized.is_empty() {
             vec![String::new()]
         } else {
-            text.split('\n').map(|s| s.to_string()).collect()
+            normalized.split('\n').map(|s| s.to_string()).collect()
         };
         self.cursor = Cursor::default();
         self.selection = None;
@@ -165,7 +231,7 @@ impl Buffer {
 
     pub fn save_as(&mut self, path: &Path) -> std::io::Result<()> {
         let content = self.text();
-        fs::write(path, content)?;
+        write_file_atomic(path, &content)?;
         self.path = Some(path.to_path_buf());
         self.modified = false;
         Ok(())
@@ -956,6 +1022,43 @@ fn char_slice(line: &str, from: usize, to: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_as_writes_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Atomic.java");
+        let mut b = Buffer::new_empty();
+        b.set_text("class Atomic {}");
+        b.save_as(&file).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "class Atomic {}");
+
+        b.set_text("class Atomic { int x; }");
+        b.save_as(&file).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "class Atomic { int x; }"
+        );
+    }
+
+    #[test]
+    fn save_as_overwrites_readonly_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Locked.java");
+        fs::write(&file, "old").unwrap();
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("attrib")
+                .arg("+R")
+                .arg(&file)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        let mut b = Buffer::new_empty();
+        b.set_text("new");
+        b.save_as(&file).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "new");
+    }
 
     #[test]
     fn utf8_cursor_and_delete() {

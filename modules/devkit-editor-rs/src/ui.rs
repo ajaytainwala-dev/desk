@@ -120,18 +120,32 @@ fn render_menu_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         spans.push(Span::styled(" ", Style::default().bg(theme.title_bg)));
     }
     spans.push(Span::styled(
-        " F1:Help  Ctrl+F:Find  F5:Run  F6:Compile  Ctrl+J:Terminal ",
+        " F1:Help  Ctrl+F:Find  ",
         Style::default().fg(theme.line_number).bg(theme.title_bg),
     ));
 
     let run_text = " [▶ Run F5] ";
     let run_len = run_text.chars().count() as u16;
+    let format_text = " [Format F9] ";
+    let format_len = format_text.chars().count() as u16;
     app.run_button_x = area.width.saturating_sub(run_len + 1);
     app.run_button_w = run_len;
+    app.format_button_x = app.run_button_x.saturating_sub(format_len + 1);
+    app.format_button_w = format_len;
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.title_bg)),
         area,
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format_text,
+            Style::default()
+                .fg(theme.bg)
+                .bg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Rect::new(area.x + app.format_button_x, area.y, format_len, 1),
     );
     f.render_widget(
         Paragraph::new(Span::styled(
@@ -198,6 +212,17 @@ fn render_menu_dropdown(f: &mut Frame, app: &mut App, menu_area: Rect, theme: &T
 
 fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     app.tab_close_positions.clear();
+    if app.current_file.is_none() {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " ",
+                Style::default().bg(theme.title_bg),
+            )))
+            .style(Style::default().bg(theme.title_bg)),
+            area,
+        );
+        return;
+    }
     let mut spans = Vec::new();
     let name = app.file_name_or_no_name();
     let modified = if app.is_modified() { " ●" } else { "" };
@@ -362,12 +387,6 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     let cursor_line = buffer.cursor.line;
     let cursor_col = buffer.cursor.col;
     let line_count = buffer.line_count();
-    buffer.ensure_cursor_visible(
-        inner.height as usize,
-        (inner.width as usize).saturating_sub(8),
-    );
-    let scroll_top = buffer.scroll_top;
-    let scroll_left = buffer.scroll_left;
 
     let ln_width = match app.config.line_numbers {
         LineNumberMode::None => 0usize,
@@ -377,6 +396,9 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     if content_width == 0 {
         return;
     }
+    buffer.ensure_cursor_visible(inner.height as usize, content_width.max(1));
+    let scroll_top = buffer.scroll_top;
+    let scroll_left = buffer.scroll_left;
 
     let tokens_all = highlight_lines(&buffer.lines, app.language);
     let selection = buffer.selection;
@@ -405,8 +427,13 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
         } else {
             vec![cells.as_slice()]
         };
-        if line_idx == cursor_line && wrap {
-            cursor_visual_row += cursor_col / content_width.max(1);
+        if line_idx == cursor_line {
+            cursor_visual_row = visual_rows.len()
+                + if wrap {
+                    cursor_col / content_width.max(1)
+                } else {
+                    0
+                };
         }
         for (chunk_idx, chunk) in chunks.iter().enumerate() {
             if visual_rows.len() >= inner.height as usize {
@@ -458,9 +485,6 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
                 Style::default().bg(theme.bg)
             };
             visual_rows.push((number, Line::from(spans).style(row_style), row_style));
-        }
-        if line_idx == cursor_line && !wrap {
-            break;
         }
     }
 
@@ -889,6 +913,8 @@ fn render_help(f: &mut Frame, area: Rect, theme: &Theme) {
         "║ PANELS        F3 explorer  Ctrl+J terminal  F8 output  F4 numbers   ║",
         "║               Mouse wheel scroll, drag panel border to resize       ║",
         "║ JAVA          F5 compile+run  F6 compile  F7 stop  :compile :run    ║",
+        "║               F9 / Shift+Alt+F format  :fmt  :format                 ║",
+        "║               Program input: type in terminal, Enter sends, Esc exits ║",
         "║ TERMINAL      Up/Down history  Ctrl+C stop job  Ctrl+L clear        ║",
         "║               Built-ins: cd, pwd, clear, javac, java; shell fallback║",
         "║ COMMANDS      :theme dark|light|monokai  :set number=relative       ║",

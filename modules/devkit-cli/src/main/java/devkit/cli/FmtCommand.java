@@ -7,6 +7,8 @@ import devkit.formatter.Formatter;
 import devkit.formatter.FormatResult;
 import devkit.formatter.FormattingConfig;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -35,7 +37,7 @@ public class FmtCommand implements Command {
 
   @Override
   public String usage() {
-    return "[--check] <file>";
+    return "[--check <file> | --stdin]";
   }
 
   @Override
@@ -45,6 +47,18 @@ public class FmtCommand implements Command {
       printHelp(out);
       System.out.print(out);
       return CommandResult.success();
+    }
+
+    if ("--stdin".equals(args[0])) {
+      try {
+        String source = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
+        FormatResult result = formatter.format(source);
+        System.out.print(result.formatted());
+        return CommandResult.success();
+      } catch (IOException e) {
+        System.err.println("error: unable to read stdin: " + e.getMessage());
+        return CommandResult.failure(1, "unable to read stdin");
+      }
     }
 
     boolean checkOnly = false;
