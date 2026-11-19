@@ -4,9 +4,6 @@ import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.screen.Screen;
 import com.googlecode.lanterna.screen.TerminalScreen;
-import com.googlecode.lanterna.terminal.AnsiTerminal;
-import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
-import com.googlecode.lanterna.terminal.Terminal;
 import devkit.terminal.colors.TerminalColor;
 import devkit.terminal.input.Key;
 import devkit.terminal.input.KeyEvent;
@@ -14,6 +11,8 @@ import devkit.core.logging.Logger;
 import devkit.core.logging.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * {@link Terminal} implementation backed by Lanterna.
@@ -21,6 +20,10 @@ import java.io.IOException;
  * <p>Lanterna handles terminal I/O, raw mode, screen buffering, and input
  * parsing. This class adapts Lanterna's API to the internal Terminal
  * interface so the rest of the application remains independent of Lanterna.</p>
+ *
+ * <p>Uses {@link AnsiConsoleTerminal} which writes ANSI escape codes directly
+ * to the console, working with {@code java.exe} on all platforms without
+ * requiring {@code javaw.exe} or {@code stty.exe}.</p>
  */
 public class LanternaTerminal implements Terminal {
 
@@ -34,19 +37,12 @@ public class LanternaTerminal implements Terminal {
   private TerminalColor currentBackground = TerminalColor.DEFAULT_BACKGROUND;
 
   public LanternaTerminal() throws IOException {
-    com.googlecode.lanterna.terminal.Terminal lanternaTerminal;
-    if (System.getProperty("os.name").startsWith("Windows")) {
-      // On Windows, bypass DefaultTerminalFactory.createScreen() to avoid the
-      // javaw/stty issues:
-      // - createWindowsTerminal() requires javaw (not java)
-      // - The Cygwin fallback requires stty.exe which may not be installed
-      // AnsiTerminal uses escape codes via the console directly, which works
-      // with java (not javaw) and without stty on Windows 10+.
-      lanternaTerminal = AnsiTerminal.createDefault();
-    } else {
-      DefaultTerminalFactory factory = new DefaultTerminalFactory();
-      lanternaTerminal = factory.createTerminal();
-    }
+    // Use AnsiConsoleTerminal which writes ANSI escape codes directly to the
+    // console. This works with java.exe on all platforms and avoids the
+    // Lanterna DefaultTerminalFactory issues on Windows (javaw requirement
+    // and stty.exe dependency).
+    com.googlecode.lanterna.terminal.Terminal lanternaTerminal =
+        new AnsiConsoleTerminal(System.in, System.out);
     this.screen = new TerminalScreen(lanternaTerminal);
     this.screen.startScreen();
     LOG.debug("Lanterna terminal started: {}x{}",
@@ -226,25 +222,31 @@ public class LanternaTerminal implements Terminal {
   }
 
   private com.googlecode.lanterna.TextColor toLanternaColor(TerminalColor color) {
-    String ansi;
+    if (color == null) {
+      return com.googlecode.lanterna.TextColor.ANSI.DEFAULT;
+    }
+    // Map TerminalColor to Lanterna TextColor.ANSI directly, avoiding
+    // TextColor.Factory.fromString() which can trigger java.awt.Color
+    // class loading (not available in jlink runtimes without java.desktop).
     if (color == TerminalColor.BLACK) {
-      ansi = "BLACK";
+      return com.googlecode.lanterna.TextColor.ANSI.BLACK;
     } else if (color == TerminalColor.RED) {
-      ansi = "RED";
+      return com.googlecode.lanterna.TextColor.ANSI.RED;
     } else if (color == TerminalColor.GREEN) {
-      ansi = "GREEN";
+      return com.googlecode.lanterna.TextColor.ANSI.GREEN;
     } else if (color == TerminalColor.YELLOW) {
-      ansi = "YELLOW";
+      return com.googlecode.lanterna.TextColor.ANSI.YELLOW;
     } else if (color == TerminalColor.BLUE) {
-      ansi = "BLUE";
+      return com.googlecode.lanterna.TextColor.ANSI.BLUE;
     } else if (color == TerminalColor.MAGENTA) {
-      ansi = "MAGENTA";
+      return com.googlecode.lanterna.TextColor.ANSI.MAGENTA;
     } else if (color == TerminalColor.CYAN) {
-      ansi = "CYAN";
+      return com.googlecode.lanterna.TextColor.ANSI.CYAN;
     } else if (color == TerminalColor.WHITE) {
-      ansi = "WHITE";
-    } else if (color == TerminalColor.DEFAULT_FOREGROUND || color == TerminalColor.DEFAULT_BACKGROUND) {
-      ansi = "DEFAULT";
+      return com.googlecode.lanterna.TextColor.ANSI.WHITE;
+    } else if (color == TerminalColor.DEFAULT_FOREGROUND
+        || color == TerminalColor.DEFAULT_BACKGROUND) {
+      return com.googlecode.lanterna.TextColor.ANSI.DEFAULT;
     } else if (color.isRgb()) {
       int rgb = color.rgb();
       int r = (rgb >> 16) & 0xFF;
@@ -253,8 +255,7 @@ public class LanternaTerminal implements Terminal {
       return com.googlecode.lanterna.TextColor.Factory.fromString(
           String.format("#%02x%02x%02x", r, g, b));
     } else {
-      ansi = "DEFAULT";
+      return com.googlecode.lanterna.TextColor.ANSI.DEFAULT;
     }
-    return com.googlecode.lanterna.TextColor.Factory.fromString(ansi);
   }
 }

@@ -99,9 +99,34 @@ jobs:
           path: dist/devkit-portable/**
           retention-days: 90
 
+  build-rust:
+    name: Build Rust TUI editor
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364b9af2e3 # v4.2.2
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Build Rust editor (release)
+        working-directory: modules/devkit-editor-rs
+        run: cargo build --release
+      - name: Upload Rust binary
+        uses: actions/upload-artifact@b4b15b8c7c6ac915e8332c9f29b3d612257d51cf # v4.4.3
+        with:
+          name: devkit-editor-rs-${{ matrix.os }}
+          path: modules/devkit-editor-rs/target/release/devkit-editor-rs*
+          retention-days: 90
+
   release:
     name: Create GitHub release
-    needs: [build-native, build-portable]
+    needs: [build-native, build-portable, build-rust]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

@@ -25,6 +25,7 @@ public class Editor {
     private Selection selection;
   private final UndoManager undoManager;
   private boolean modified = false;
+  private String fileName = null;
 
   public Editor() {
     this.buffer = new GapBuffer();
@@ -63,6 +64,29 @@ public class Editor {
 
   public void setModified(boolean modified) {
     this.modified = modified;
+  }
+
+  /**
+   * Returns the file name associated with this editor, or {@code null} if
+   * no file is associated.
+   */
+  public String fileName() {
+    return fileName;
+  }
+
+  /**
+   * Sets the file name associated with this editor.
+   */
+  public void setFileName(String fileName) {
+    this.fileName = fileName;
+  }
+
+  /**
+   * Returns the file name for display, or "[No Name]" if no file is
+   * associated.
+   */
+  public String fileNameOrNoName() {
+    return fileName != null ? fileName : "[No Name]";
   }
 
   /**

@@ -3,21 +3,17 @@ package devkit.cli;
 import devkit.core.filesystem.FileSystem;
 import devkit.core.logging.Logger;
 import devkit.core.logging.LoggerFactory;
-import devkit.editor.Editor;
-import devkit.editor.components.EditorRenderer;
-import devkit.terminal.Terminal;
-import devkit.terminal.TerminalFactory;
-import devkit.terminal.input.Key;
-import devkit.terminal.input.KeyEvent;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * The "edit" command: opens a file in the terminal editor.
+ * The "edit" command: opens a file in the Rust-based TUI editor.
  *
- * <p>The editor renders the file content to the terminal and processes
- * keyboard input until the user quits (Ctrl+Q) or saves (Ctrl+S).</p>
+ * <p>This command delegates to the {@code devkit-editor-rs} binary, a
+ * high-performance terminal user interface built with Ratatui and Crossterm.
+ * The binary handles all rendering, input, and file I/O directly.</p>
  */
 public class EditCommand implements Command {
 
@@ -50,119 +46,73 @@ public class EditCommand implements Command {
     Path file = Paths.get(args[0]);
     LOG.info("edit requested for file: {}", file);
 
-    // Read existing content if the file exists
-    String content = "";
-    if (FileSystem.isFile(file) && FileSystem.isReadable(file)) {
+    // Ensure the file exists (create empty if not)
+    if (!FileSystem.isFile(file)) {
       try {
-        content = FileSystem.readString(file);
+        FileSystem.writeString(file, "");
       } catch (Exception e) {
-        System.err.println("error: unable to read file " + file + ": " + e.getMessage());
-        return CommandResult.failure(1, "unable to read file");
+        System.err.println("error: unable to create file " + file + ": " + e.getMessage());
+        return CommandResult.failure(1, "unable to create file");
       }
     }
 
-    Terminal terminal = null;
+    // Locate the Rust TUI binary
+    Path editorBinary = locateEditorBinary();
+    if (editorBinary == null) {
+      System.err.println("error: rust TUI editor binary not found.");
+      System.err.println("       Build it with: cargo build --release --manifest-path modules/devkit-editor-rs/Cargo.toml");
+      return CommandResult.failure(1, "editor binary not found");
+    }
+
+    // Launch the Rust TUI editor
     try {
-      terminal = TerminalFactory.createTerminal();
-      terminal.enterRawMode();
-
-      Editor editor = new Editor(content);
-      EditorRenderer renderer = new EditorRenderer(terminal, editor);
-
-      boolean running = true;
-      while (running) {
-        renderer.render();
-        KeyEvent key = terminal.readKey();
-        if (key == null) {
-          break;
-        }
-
-        running = handleKey(terminal, editor, file, key);
-      }
-
-      terminal.exitRawMode();
-      terminal = null; // prevent double close
-      return CommandResult.success();
-    } catch (Exception e) {
+      ProcessBuilder pb = new ProcessBuilder(editorBinary.toString(), file.toString());
+      pb.inheritIO(); // Connect stdio to the parent process
+      Process process = pb.start();
+      int exitCode = process.waitFor();
+      LOG.info("editor exited with code: {}", exitCode);
+      return exitCode == 0 ? CommandResult.success() : CommandResult.failure(exitCode, "editor exited with code " + exitCode);
+    } catch (IOException | InterruptedException e) {
       LOG.error("editor failed", e);
+      Thread.currentThread().interrupt();
       System.err.println("error: editor failed: " + e.getMessage());
       return CommandResult.failure(1, "editor failed");
-    } finally {
-      if (terminal != null && terminal.isRawMode()) {
-        try {
-          terminal.exitRawMode();
-        } catch (Exception ignored) {
-          // best effort
-        }
-      }
     }
   }
 
   /**
-   * Handles a key event in the editor. Returns {@code false} to quit.
+   * Locates the Rust TUI editor binary. Checks several locations in order:
+   * <ol>
+   *   <li>{@code modules/devkit-editor-rs/target/release/devkit-editor-rs(.exe)}</li>
+   *   <li>Beside the CLI jar (for portable distributions)</li>
+   * </ol>
    */
-  private boolean handleKey(Terminal terminal, Editor editor, Path file, KeyEvent key) {
-    if (key.isCtrl()) {
-      switch (key.character()) {
-        case 'q':
-        case 'Q':
-          return false; // quit
-        case 's':
-        case 'S':
-          saveFile(editor, file);
-          return true;
-        default:
-          return true;
-      }
+  private Path locateEditorBinary() {
+    // Check the release build directory
+    Path releaseBuild = Paths.get("modules/devkit-editor-rs/target/release")
+        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
+    if (FileSystem.isFile(releaseBuild)) {
+      return releaseBuild.toAbsolutePath();
     }
 
-    switch (key.key()) {
-      case ENTER:
-        editor.insertNewline();
-        return true;
-      case BACKSPACE:
-        editor.deleteBackward();
-        return true;
-      case DELETE:
-        editor.deleteForward();
-        return true;
-      case HOME:
-        editor.moveToLineStart();
-        return true;
-      case END:
-        editor.moveToLineEnd();
-        return true;
-      case ARROW_UP:
-        editor.moveUp();
-        return true;
-      case ARROW_DOWN:
-        editor.moveDown();
-        return true;
-      case ARROW_LEFT:
-        editor.moveBackward();
-        return true;
-      case ARROW_RIGHT:
-        editor.moveForward();
-        return true;
-      case ESCAPE:
-        return true; // ignore
-      case CHARACTER:
-        editor.insertChar(key.character());
-        return true;
-      case UNKNOWN:
-      default:
-        return true;
+    // Check debug build directory
+    Path debugBuild = Paths.get("modules/devkit-editor-rs/target/debug")
+        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
+    if (FileSystem.isFile(debugBuild)) {
+      return debugBuild.toAbsolutePath();
     }
+
+    // Check beside the current working directory
+    Path besideCwd = Paths.get(".")
+        .resolve(isWindows() ? "devkit-editor-rs.exe" : "devkit-editor-rs");
+    if (FileSystem.isFile(besideCwd)) {
+      return besideCwd.toAbsolutePath();
+    }
+
+    return null;
   }
 
-  private void saveFile(Editor editor, Path file) {
-    try {
-      FileSystem.writeString(file, editor.buffer().toString());
-      editor.setModified(false);
-      LOG.info("file saved: {}", file);
-    } catch (Exception e) {
-      LOG.error("unable to save file {}", file, e);
-      System.err.println("error: unable to save file " + file + ": " + e.getMessage());
-    }
+  private static boolean isWindows() {
+    return java.nio.file.FileSystems.getDefault().getSeparator().equals("\\");
   }
 }
