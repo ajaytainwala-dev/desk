@@ -1,14 +1,14 @@
 #!/bin/bash
-# Build a jlink portable runtime distribution for DevKit (Linux/macOS).
+# Build a jlink portable runtime distribution for Desk (Linux/macOS).
 #
 # Usage:
 #   ./packaging/jlink/build-jlink.sh [output-dir]
 #
-# Output layout (default: dist/devkit-portable/):
+# Output layout (default: dist/desk-portable/):
 #   bin/
-#     devkit            (shell launcher)
+#     desk            (shell launcher)
 #   lib/
-#     devkit-cli-...-uber.jar
+#     desk-cli-...-uber.jar
 #   runtime/
 #     bin/java          (custom jlink JRE)
 #   config/
@@ -16,11 +16,11 @@
 
 set -euo pipefail
 
-OUTPUT_DIR="${1:-dist/devkit-portable}"
+OUTPUT_DIR="${1:-dist/desk-portable}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-echo "=== DevKit jlink Portable Build ==="
+echo "=== Desk jlink Portable Build ==="
 echo "Repo root: $REPO_ROOT"
 echo "Output dir: $OUTPUT_DIR"
 
@@ -100,9 +100,9 @@ echo "jlink runtime created at $RUNTIME_DIR"
 echo ""
 echo "[4/4] Copying application JARs..."
 
-UBER_JAR=$(ls "$REPO_ROOT/modules/devkit-cli/target"/devkit-cli-*.jar 2>/dev/null | grep -v original | head -1)
+UBER_JAR=$(ls "$REPO_ROOT/modules/desk-cli/target"/desk-cli-*.jar 2>/dev/null | grep -v original | head -1)
 if [ -z "$UBER_JAR" ]; then
-  echo "Error: Uber JAR not found in modules/devkit-cli/target" >&2
+  echo "Error: Uber JAR not found in modules/desk-cli/target" >&2
   exit 1
 fi
 
@@ -113,12 +113,12 @@ echo "Copied: $(basename "$UBER_JAR")"
 echo ""
 echo "Creating launch scripts..."
 
-cat > "$BIN_DIR/devkit" << 'LAUNCHER'
+cat > "$BIN_DIR/desk" << 'LAUNCHER'
 #!/bin/sh
-# DevKit launcher
+# Desk launcher
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
-APP_JAR="$SCRIPT_DIR/../lib/devkit-cli-0.1.0-SNAPSHOT.jar"
+APP_JAR="$SCRIPT_DIR/../lib/desk-cli-0.1.0-SNAPSHOT.jar"
 
 if [ ! -x "$RUNTIME_JAVA" ]; then
   echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
@@ -132,29 +132,29 @@ fi
 
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
 LAUNCHER
-chmod +x "$BIN_DIR/devkit"
+chmod +x "$BIN_DIR/desk"
 
 # README
 cat > "$DIST_DIR/README.txt" << 'README'
-DevKit Portable Distribution
+Desk Portable Distribution
 ============================
 
 This distribution contains a custom Java runtime (built with jlink) and the
-DevKit application. No system Java installation is required.
+Desk application. No system Java installation is required.
 
 Directory layout:
   bin/
-    devkit        - Shell launcher (Git Bash, WSL, Linux, macOS)
+    desk        - Shell launcher (Git Bash, WSL, Linux, macOS)
   lib/
-    devkit-cli-*.jar   - Application JAR (all dependencies embedded)
+    desk-cli-*.jar   - Application JAR (all dependencies embedded)
   runtime/
-    Custom JRE (jlink image) - contains only the JDK modules needed by DevKit
+    Custom JRE (jlink image) - contains only the JDK modules needed by Desk
   config/
     Configuration files (created on first run)
 
 Usage:
-  Linux/macOS: bin/devkit [command] [args]
-  Git Bash:    ./bin/devkit [command] [args]
+  Linux/macOS: bin/desk [command] [args]
+  Git Bash:    ./bin/desk [command] [args]
 
 Available commands:
   version  - Print the application version
@@ -165,10 +165,10 @@ Available commands:
   run      - Run a compiled Java class
 
 Examples:
-  bin/devkit version
-  bin/devkit fmt src/Main.java
-  bin/devkit compile src/Main.java
-  bin/devkit run Main
+  bin/desk version
+  bin/desk fmt src/Main.java
+  bin/desk compile src/Main.java
+  bin/desk run Main
 
 No installation required: extract this archive anywhere and run the launcher.
 README
@@ -176,4 +176,4 @@ README
 echo ""
 echo "=== Build complete ==="
 echo "Distribution: $DIST_DIR"
-echo "Launcher:     $BIN_DIR/devkit"
+echo "Launcher:     $BIN_DIR/desk"

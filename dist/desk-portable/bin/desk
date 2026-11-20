@@ -1,0 +1,17 @@
+#!/bin/sh
+# DevKit launcher
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
+APP_JAR="$SCRIPT_DIR/../lib/desk-cli.jar"
+
+if [ ! -x "$RUNTIME_JAVA" ]; then
+  echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
+  exit 1
+fi
+
+if [ ! -f "$APP_JAR" ]; then
+  echo "Error: application JAR not found at $APP_JAR" >&2
+  exit 1
+fi
+
+exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"

@@ -43,14 +43,14 @@ Optional executable JAR for developers who already have a compatible JVM.
 The application does not assume a fixed install location. Supported locations:
 
 1. **Portable mode** — configuration and data beside the executable (`--portable` flag or a marker file).
-2. **User-level** — OS-standard application configuration directory (e.g. `~/.config/devkit/`).
-3. **Project-level** — `devkit.json` in the project directory.
+2. **User-level** — OS-standard application configuration directory (e.g. `~/.config/desk/`).
+3. **Project-level** — `desk.json` in the project directory.
 
 Configuration precedence (low to high):
 1. Built-in defaults
 2. User config file
 3. Project config file
-4. Environment variables (`DEVKIT_*` prefix)
+4. Environment variables (`DESK_*` prefix)
 5. Command-line overrides
 
 The application never requires a configuration file to exist.

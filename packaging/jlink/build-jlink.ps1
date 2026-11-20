@@ -1,4 +1,4 @@
-# Build a jlink portable runtime distribution for DevKit.
+# Build a jlink portable runtime distribution for Desk.
 #
 # Usage:
 #   pwsh -ExecutionPolicy Bypass -File packaging/jlink/build-jlink.ps1 [output-dir]
@@ -10,12 +10,12 @@
 #   4. Copies the uber JAR and dependencies into the distribution
 #   5. Creates launch scripts
 #
-# Output layout (default: dist/devkit-portable/):
+# Output layout (default: dist/desk-portable/):
 #   bin/
-#     devkit            (shell launcher)
-#     devkit.cmd        (Windows launcher)
+#     desk            (shell launcher)
+#     desk.cmd        (Windows launcher)
 #   lib/
-#     devkit-cli-...-uber.jar
+#     desk-cli-...-uber.jar
 #   runtime/
 #     bin/java          (custom jlink JRE)
 #     ...               (jlink runtime modules)
@@ -23,14 +23,14 @@
 #   README.txt
 
 param(
-  [string]$OutputDir = "dist/devkit-portable"
+  [string]$OutputDir = "dist/desk-portable"
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
 
-Write-Host "=== DevKit jlink Portable Build ===" -ForegroundColor Cyan
+Write-Host "=== Desk jlink Portable Build ===" -ForegroundColor Cyan
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Output dir: $OutputDir"
 
@@ -136,19 +136,19 @@ Write-Host "jlink runtime created at $RuntimeDir" -ForegroundColor Green
 Write-Host "`n[4/4] Copying application JARs..." -ForegroundColor Cyan
 
 # Find the shaded application JAR (shade plugin replaces the original)
-$uberJar = Get-ChildItem -Path "$RepoRoot\modules\devkit-cli\target" -Filter "devkit-cli-0.1.0-SNAPSHOT.jar" | Where-Object { $_.Name -notlike "*original*" -and $_.Name -notlike "*-uber*" } | Select-Object -First 1
+$uberJar = Get-ChildItem -Path "$RepoRoot\modules\desk-cli\target" -Filter "desk-cli-0.1.0-SNAPSHOT.jar" | Where-Object { $_.Name -notlike "*original*" -and $_.Name -notlike "*-uber*" } | Select-Object -First 1
 if (-not $uberJar) {
-  # Fallback: any non-original devkit-cli jar
-  $uberJar = Get-ChildItem -Path "$RepoRoot\modules\devkit-cli\target" -Filter "devkit-cli-*.jar" | Where-Object { $_.Name -notlike "*original*" } | Select-Object -First 1
+  # Fallback: any non-original desk-cli jar
+  $uberJar = Get-ChildItem -Path "$RepoRoot\modules\desk-cli\target" -Filter "desk-cli-*.jar" | Where-Object { $_.Name -notlike "*original*" } | Select-Object -First 1
 }
 if (-not $uberJar) {
-  Write-Error "Application JAR not found in modules/devkit-cli/target"
+  Write-Error "Application JAR not found in modules/desk-cli/target"
   exit 1
 }
 
 # Copy to a predictable name
-Copy-Item $uberJar.FullName -Destination (Join-Path $LibDir "devkit-cli.jar") -Force
-Write-Host "Copied: $($uberJar.Name) -> devkit-cli.jar"
+Copy-Item $uberJar.FullName -Destination (Join-Path $LibDir "desk-cli.jar") -Force
+Write-Host "Copied: $($uberJar.Name) -> desk-cli.jar"
 
 # Copy dependency JARs that aren't shaded into the uber JAR
 # (shade plugin embeds them, so we only need the uber JAR)
@@ -160,10 +160,10 @@ Write-Host "`nCreating launch scripts..." -ForegroundColor Cyan
 # Shell launcher (for Git Bash, WSL, etc.)
 $launchShell = @'
 #!/bin/sh
-# DevKit launcher
+# Desk launcher
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
-APP_JAR="$SCRIPT_DIR/../lib/devkit-cli.jar"
+APP_JAR="$SCRIPT_DIR/../lib/desk-cli.jar"
 
 if [ ! -x "$RUNTIME_JAVA" ]; then
   echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
@@ -177,7 +177,7 @@ fi
 
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
 '@
-$launchShell | Set-Content -Path (Join-Path $BinDir "devkit") -Encoding UTF8
+$launchShell | Set-Content -Path (Join-Path $BinDir "desk") -Encoding UTF8
 # chmod is not available on Windows; set executable bit when extracting on Unix
 
 # Windows launcher
@@ -187,7 +187,7 @@ setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
 set "RUNTIME_JAVA=%SCRIPT_DIR%..\runtime\bin\java.exe"
-set "APP_JAR=%SCRIPT_DIR%..\lib\devkit-cli.jar"
+set "APP_JAR=%SCRIPT_DIR%..\lib\desk-cli.jar"
 
 if not exist "%RUNTIME_JAVA%" (
     echo Error: runtime Java not found at %RUNTIME_JAVA% >&2
@@ -201,31 +201,31 @@ if not exist "%APP_JAR%" (
 
 "%RUNTIME_JAVA%" -jar "%APP_JAR%" %*
 "@
-$launchCmd | Set-Content -Path (Join-Path $BinDir "devkit.cmd") -Encoding ASCII
+$launchCmd | Set-Content -Path (Join-Path $BinDir "desk.cmd") -Encoding ASCII
 
 # README
 $readme = @"
-DevKit Portable Distribution
+Desk Portable Distribution
 ============================
 
 This distribution contains a custom Java runtime (built with jlink) and the
-DevKit application. No system Java installation is required.
+Desk application. No system Java installation is required.
 
 Directory layout:
   bin/
-    devkit        - Shell launcher (Git Bash, WSL, Linux, macOS)
-    devkit.cmd    - Windows command launcher
+    desk        - Shell launcher (Git Bash, WSL, Linux, macOS)
+    desk.cmd    - Windows command launcher
   lib/
-    devkit-cli-*.jar   - Application JAR (all dependencies embedded)
+    desk-cli-*.jar   - Application JAR (all dependencies embedded)
   runtime/
-    Custom JRE (jlink image) - contains only the JDK modules needed by DevKit
+    Custom JRE (jlink image) - contains only the JDK modules needed by Desk
   config/
     Configuration files (created on first run)
 
 Usage:
-  Windows:    bin\devkit.cmd [command] [args]
-  Linux/macOS: bin/devkit [command] [args]
-  Git Bash:   ./bin/devkit [command] [args]
+  Windows:    bin\desk.cmd [command] [args]
+  Linux/macOS: bin/desk [command] [args]
+  Git Bash:   ./bin/desk [command] [args]
 
 Available commands:
   version  - Print the application version
@@ -236,10 +236,10 @@ Available commands:
   run      - Run a compiled Java class
 
 Examples:
-  bin\devkit.cmd version
-  bin\devkit.cmd fmt src/Main.java
-  bin\devkit.cmd compile src/Main.java
-  bin\devkit.cmd run Main
+  bin\desk.cmd version
+  bin\desk.cmd fmt src/Main.java
+  bin\desk.cmd compile src/Main.java
+  bin\desk.cmd run Main
 
 No installation required: extract this archive anywhere and run the launcher.
 "@
@@ -247,4 +247,4 @@ $readme | Set-Content -Path (Join-Path $DistDir "README.txt") -Encoding ASCII
 
 Write-Host "`n=== Build complete ===" -ForegroundColor Green
 Write-Host "Distribution: $DistDir"
-Write-Host "Launcher:     $BinDir\devkit.cmd (Windows) / $BinDir/devkit (shell)"
+Write-Host "Launcher:     $BinDir\desk.cmd (Windows) / $BinDir/desk (shell)"

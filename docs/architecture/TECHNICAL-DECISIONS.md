@@ -17,7 +17,7 @@
 - JSON config files with a small hand-written parser (no heavy JSON dependency).
 - Precedence: defaults → user config → project config → environment variables → command-line overrides.
 - Missing config file is never an error; built-in defaults guarantee sensible behavior.
-- Environment variables use the `DEVKIT_` prefix, mapped to dot-separated keys.
+- Environment variables use the `DESK_` prefix, mapped to dot-separated keys.
 
 ## Filesystem
 
@@ -41,7 +41,7 @@
 ## Lexer
 
 - Custom hand-written Java lexer (no regex-based highlighting).
-- Token model: `TokenType`, `Token`, `TokenStream` in `devkit.lexer.tokens`.
+- Token model: `TokenType`, `Token`, `TokenStream` in `desk.lexer.tokens`.
 - Handles keywords, contextual keywords, primitive types, identifiers (Unicode via `Character.isUnicodeIdentifierStart/Part`), operators, separators, delimiters, numeric literals (decimal, hex `0x`, binary `0b`, floats with exponents and suffixes), string literals (with escapes), character literals, text blocks (`"""`), line comments (`//`), block comments (`/* */`), annotations (`@`), whitespace, newlines, and unknown characters.
 - Keywords inside strings and comments are not misclassified — strings and comments are scanned as atomic tokens.
 - Unterminated strings/comments are emitted as their respective token types rather than throwing.
@@ -71,7 +71,7 @@
 ## Versioning
 
 - Semantic versioning (MAJOR.MINOR.PATCH).
-- Version defined centrally in `devkit.cli.AppVersion`; consistent across CLI, JAR manifest, and docs.
+- Version defined centrally in `desk.cli.AppVersion`; consistent across CLI, JAR manifest, and docs.
 - Current version: 0.1.0 (SNAPSHOT during development).
 
 ## What is deliberately NOT done yet (future milestones)

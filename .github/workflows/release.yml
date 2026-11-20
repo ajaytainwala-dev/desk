@@ -75,15 +75,21 @@ jobs:
           fi
       - name: Build all modules
         run: bash mvnw -B -DskipTests package
-      - name: Build native image
-        run: |
-          GRAALVM_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
-          export GRAALVM_HOME
-          bash packaging/native-image/build-native.sh devkit
+      - name: Build native image (Unix)
+        if: runner.os != 'Windows'
+        env:
+          GRAALVM_HOME: ${{ env.JAVA_HOME }}
+        run: bash packaging/native-image/build-native.sh desk
+      - name: Build native image (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GRAALVM_HOME: ${{ env.JAVA_HOME }}
+        run: ./packaging/native-image/build-native.ps1 desk
       - name: Normalize native artifact names
         run: |
           mkdir -p dist/upload
-          for f in dist/native/devkit*; do
+          for f in dist/native/desk*; do
             [ -e "$f" ] || continue
             name=$(basename "$f")
             cp "$f" "dist/upload/${name}-${{ matrix.os }}"
@@ -91,7 +97,7 @@ jobs:
       - name: Upload native artifact
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-native-${{ matrix.os }}
+          name: desk-native-${{ matrix.os }}
           path: dist/upload/*
           retention-days: 90
 
@@ -111,12 +117,12 @@ jobs:
       - name: Build all modules
         run: bash mvnw -B -DskipTests package
       - name: Build jlink portable distribution
-        run: bash packaging/jlink/build-jlink.sh dist/devkit-portable
+        run: bash packaging/jlink/build-jlink.sh dist/desk-portable
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-portable
-          path: dist/devkit-portable/**
+          name: desk-portable
+          path: dist/desk-portable/**
           retention-days: 90
 
   build-rust:
@@ -133,13 +139,13 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Build Rust editor (release)
-        working-directory: modules/devkit-editor-rs
+        working-directory: modules/desk-tui
         run: cargo build --release
       - name: Upload Rust binary
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-editor-rs-${{ matrix.os }}
-          path: modules/devkit-editor-rs/target/release/devkit-editor-rs*
+          name: desk-tui-${{ matrix.os }}
+          path: modules/desk-tui/target/release/desk*
           retention-days: 90
 
   release:

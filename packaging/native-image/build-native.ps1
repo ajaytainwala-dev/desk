@@ -1,4 +1,4 @@
-# Build a GraalVM Native Image for DevKit.
+# Build a GraalVM Native Image for Desk.
 #
 # Prerequisites:
 #   - GraalVM JDK installed with native-image component
@@ -8,10 +8,10 @@
 #   pwsh -ExecutionPolicy Bypass -File packaging/native-image/build-native.ps1 [output-name]
 #
 # Output:
-#   dist/native/devkit.exe (Windows) or dist/native/devkit (Linux/macOS)
+#   dist/native/desk.exe (Windows) or dist/native/desk (Linux/macOS)
 
 param(
-  [string]$OutputName = "devkit"
+  [string]$OutputName = "desk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +38,7 @@ if (-not (Test-Path $nativeImageExe)) {
   exit 1
 }
 
-Write-Host "=== DevKit Native Image Build ===" -ForegroundColor Cyan
+Write-Host "=== Desk Native Image Build ===" -ForegroundColor Cyan
 Write-Host "GraalVM: $graalvmHome"
 Write-Host "Output:  $OutputName"
 
@@ -51,12 +51,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Find the shaded application JAR
-$uberJar = Get-ChildItem -Path "$RepoRoot\modules\devkit-cli\target" -Filter "devkit-cli-0.1.0-SNAPSHOT.jar" | Where-Object { $_.Name -notlike "*original*" -and $_.Name -notlike "*-uber*" } | Select-Object -First 1
+$uberJar = Get-ChildItem -Path "$RepoRoot\modules\desk-cli\target" -Filter "desk-cli-0.1.0-SNAPSHOT.jar" | Where-Object { $_.Name -notlike "*original*" -and $_.Name -notlike "*-uber*" } | Select-Object -First 1
 if (-not $uberJar) {
-  $uberJar = Get-ChildItem -Path "$RepoRoot\modules\devkit-cli\target" -Filter "devkit-cli-*.jar" | Where-Object { $_.Name -notlike "*original*" } | Select-Object -First 1
+  $uberJar = Get-ChildItem -Path "$RepoRoot\modules\desk-cli\target" -Filter "desk-cli-*.jar" | Where-Object { $_.Name -notlike "*original*" } | Select-Object -First 1
 }
 if (-not $uberJar) {
-  Write-Error "Application JAR not found in modules/devkit-cli/target"
+  Write-Error "Application JAR not found in modules/desk-cli/target"
   exit 1
 }
 
@@ -87,7 +87,7 @@ Write-Host "Output: $outputExe"
   -H:ProxyConfigurationFiles="$RepoRoot\packaging\native-image\proxy-config.json" `
   -H:+ReportExceptionStackTraces `
   -H:+ReportUnsupportedElementsAtRuntime `
-  devkit.cli.Main
+  desk.cli.Main
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "native-image failed."

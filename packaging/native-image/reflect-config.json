@@ -1,58 +1,58 @@
 [
   {
-    "name": "devkit.cli.Command",
+    "name": "desk.cli.Command",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.cli.VersionCommand",
+    "name": "desk.cli.VersionCommand",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.cli.HelpCommand",
-    "methods": [{"name": "<init>", "parameterTypes": ["devkit.cli.CommandRegistry"]}]
+    "name": "desk.cli.HelpCommand",
+    "methods": [{"name": "<init>", "parameterTypes": ["desk.cli.CommandRegistry"]}]
   },
   {
-    "name": "devkit.cli.EditCommand",
+    "name": "desk.cli.EditCommand",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.cli.FmtCommand",
+    "name": "desk.cli.FmtCommand",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.cli.CompileCommand",
+    "name": "desk.cli.CompileCommand",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.cli.RunCommand",
+    "name": "desk.cli.RunCommand",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.editor.Editor",
+    "name": "desk.editor.Editor",
     "methods": [{"name": "<init>", "parameterTypes": ["java.lang.String"]}]
   },
   {
-    "name": "devkit.editor.components.EditorRenderer",
-    "methods": [{"name": "<init>", "parameterTypes": ["devkit.terminal.Terminal", "devkit.editor.Editor"]}]
+    "name": "desk.editor.components.EditorRenderer",
+    "methods": [{"name": "<init>", "parameterTypes": ["desk.terminal.Terminal", "desk.editor.Editor"]}]
   },
   {
-    "name": "devkit.formatter.Formatter",
-    "methods": [{"name": "<init>", "parameterTypes": []}, {"name": "<init>", "parameterTypes": ["devkit.formatter.FormattingConfig"]}]
+    "name": "desk.formatter.Formatter",
+    "methods": [{"name": "<init>", "parameterTypes": []}, {"name": "<init>", "parameterTypes": ["desk.formatter.FormattingConfig"]}]
   },
   {
-    "name": "devkit.formatter.FormattingConfig$Builder",
+    "name": "desk.formatter.FormattingConfig$Builder",
     "methods": [{"name": "<init>", "parameterTypes": []}]
   },
   {
-    "name": "devkit.java.JdkDiscovery",
+    "name": "desk.java.JdkDiscovery",
     "methods": [{"name": "preferredJdk", "parameterTypes": []}]
   },
   {
-    "name": "devkit.java.JavaSourceCompiler",
+    "name": "desk.java.JavaSourceCompiler",
     "methods": [{"name": "compile", "parameterTypes": ["java.nio.file.Path", "java.nio.file.Path", "java.util.List"]}]
   },
   {
-    "name": "devkit.java.JavaRunner",
+    "name": "desk.java.JavaRunner",
     "methods": [{"name": "run", "parameterTypes": ["java.lang.String", "java.util.List", "java.util.List"]}]
   },
   {

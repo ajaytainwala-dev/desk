@@ -65,14 +65,20 @@ jobs:
           fi
       - name: Build all modules
         run: bash mvnw -B -DskipTests package
-      - name: Build native image
-        run: |
-          GRAALVM_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
-          export GRAALVM_HOME
-          bash packaging/native-image/build-native.sh devkit
+      - name: Build native image (Unix)
+        if: runner.os != 'Windows'
+        env:
+          GRAALVM_HOME: ${{ env.JAVA_HOME }}
+        run: bash packaging/native-image/build-native.sh desk
+      - name: Build native image (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GRAALVM_HOME: ${{ env.JAVA_HOME }}
+        run: ./packaging/native-image/build-native.ps1 desk
       - name: Upload native artifact
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-native-${{ matrix.os }}
-          path: dist/native/devkit*
+          name: desk-native-${{ matrix.os }}
+          path: dist/native/desk*
           retention-days: 30
