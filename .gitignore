@@ -3,6 +3,10 @@
 # Build outputs
 target/
 *.class
+website/node_modules/
+website/dist/
+dist/
+!dist/.gitkeep
 
 # IDE
 .idea/

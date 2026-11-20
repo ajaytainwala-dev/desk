@@ -74,11 +74,33 @@ The TUI calls the Java toolchain for `fmt` and `check` when a JDK and the CLI JA
 
 ## Distribution
 
-Release artifacts (GitHub Actions on version tags):
+Release artifacts (GitHub Actions on version tags) use **stable asset names** so the website and setup scripts always resolve the latest:
 
-- **Portable** — `jlink` runtime + `bin/desk` launcher
-- **Native image** — GraalVM `desk` executable (per OS)
-- **TUI** — `desk` Rust binary per OS
+| Asset | Purpose |
+|-------|---------|
+| `Desk-Setup-<version>.exe` | Windows GUI installer |
+| `desk-cli-setup-windows.ps1` | Windows CLI setup |
+| `desk-cli-setup.sh` | macOS / Linux CLI setup |
+| `desk-portable-<os>.zip` | Portable zip (unzip & run) |
+| `desk-native-*` / `desk-tui-*` | Standalone binaries |
+
+```bash
+curl -fsSL https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup.sh | bash
+```
+
+```powershell
+irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup-windows.ps1 | iex
+```
+
+### Website
+
+Marketing site in `website/` — download buttons call the GitHub Releases API and refresh automatically when you publish a new tag (no site redeploy required for new artifact URLs).
+
+```bash
+cd website && npm install && npm run dev
+```
+
+Installer sources live under `packaging/installers/`.
 
 ## License
 
