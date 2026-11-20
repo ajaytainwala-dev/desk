@@ -94,13 +94,21 @@ irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/des
 
 ### Website
 
-Marketing site in `website/` — download buttons call the GitHub Releases API and refresh automatically when you publish a new tag (no site redeploy required for new artifact URLs).
+Marketing site in `website/` — download buttons call the GitHub Releases API and refresh automatically when you publish a new tag. The **Sync release links** workflow also writes `website/public/latest-release.json` after each release as a cached fallback.
 
 ```bash
 cd website && npm install && npm run dev
 ```
 
 Installer sources live under `packaging/installers/`.
+
+## Author
+
+Created by [Ajay Tainwala](https://www.ajaytainwala.dev).
+
+## Contributing
+
+Desk is open source. Issues and pull requests are welcome — including work on the Desk TUI editor (`modules/desk-tui`), CLI, formatter, and packaging.
 
 ## License
 

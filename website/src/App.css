@@ -10,20 +10,21 @@
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(20, 184, 166, 0.18), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 8%, rgba(217, 119, 6, 0.12), transparent 50%),
-    linear-gradient(165deg, #eef3f8 0%, #d5e0ec 42%, #c3d2e4 100%);
+    radial-gradient(ellipse 85% 55% at 8% -5%, rgba(45, 212, 191, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 95% 5%, rgba(245, 158, 11, 0.07), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(13, 148, 136, 0.06), transparent 55%),
+    linear-gradient(168deg, #0a0e14 0%, #0d131c 40%, #0a1018 100%);
 }
 
 .atmosphere__grid {
   position: absolute;
   inset: 0;
-  opacity: 0.35;
+  opacity: 0.4;
   background-image:
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 15%, #000 15%, transparent 72%);
 }
 
 .atmosphere__orb {
@@ -31,11 +32,11 @@
   width: min(52vw, 520px);
   height: min(52vw, 520px);
   border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.45;
-  background: radial-gradient(circle, rgba(20, 184, 166, 0.35), transparent 70%);
-  top: 8%;
-  right: -8%;
+  filter: blur(48px);
+  opacity: 0.35;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.28), transparent 70%);
+  top: 6%;
+  right: -10%;
   animation: orb-drift 18s ease-in-out infinite alternate;
 }
 
@@ -86,15 +87,17 @@
 
 .nav__cta {
   padding: 0.45rem 0.9rem;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--line-strong);
   border-radius: 6px;
   color: var(--ink) !important;
-  transition: background 0.2s, color 0.2s;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
 .nav__cta:hover {
-  background: var(--ink);
-  color: var(--paper) !important;
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #061018 !important;
 }
 
 /* —— Hero —— */
@@ -131,6 +134,10 @@
   line-height: 0.88;
   letter-spacing: -0.06em;
   color: var(--ink);
+  background: linear-gradient(135deg, #f0f6fc 20%, var(--teal-bright) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .hero__headline {
@@ -140,7 +147,8 @@
   font-size: clamp(1.35rem, 3.2vw, 1.85rem);
   line-height: 1.25;
   letter-spacing: -0.02em;
-  max-width: 18ch;
+  max-width: 20ch;
+  color: var(--ink);
 }
 
 .hero__lede {
@@ -148,7 +156,7 @@
   font-size: 1.05rem;
   line-height: 1.55;
   color: var(--ink-soft);
-  max-width: 34ch;
+  max-width: 36ch;
 }
 
 .hero__actions {
@@ -178,22 +186,23 @@
 }
 
 .btn--primary {
-  background: var(--ink);
-  color: #f4f8fc;
+  background: var(--teal);
+  color: #061018;
 }
 
 .btn--primary:hover {
-  background: var(--ink-soft);
+  background: var(--teal-bright);
 }
 
 .btn--ghost {
   background: transparent;
-  border-color: var(--ink);
+  border-color: var(--line-strong);
   color: var(--ink);
 }
 
 .btn--ghost:hover {
-  background: rgba(12, 18, 34, 0.06);
+  border-color: var(--teal-dim);
+  background: rgba(45, 212, 191, 0.06);
 }
 
 .btn--block {
@@ -218,6 +227,10 @@
   font-weight: 500;
 }
 
+.hero__meta strong {
+  color: var(--ink);
+}
+
 /* —— Terminal visual —— */
 .hero__visual {
   position: relative;
@@ -228,11 +241,11 @@
   position: relative;
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(160deg, #101826 0%, #0c1222 100%);
+  background: linear-gradient(160deg, #121a26 0%, #0c121c 100%);
   color: #d8e4f0;
   box-shadow: var(--shadow);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  font-family: "IBM Plex Sans", ui-monospace, monospace;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.45;
   transform: perspective(1200px) rotateY(-4deg) rotateX(2deg);
@@ -273,8 +286,8 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.7rem 0.9rem;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--line);
 }
 
 .terminal__dot {
@@ -370,14 +383,15 @@
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.15;
-  max-width: 18ch;
+  max-width: 20ch;
+  color: var(--ink);
 }
 
 .section__lede {
   margin: 0.85rem 0 0;
   font-size: 1.05rem;
   color: var(--ink-soft);
-  max-width: 42ch;
+  max-width: 44ch;
   line-height: 1.55;
 }
 
@@ -399,6 +413,7 @@
   font-family: var(--font-display);
   font-size: 1.2rem;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .feature p {
@@ -418,7 +433,7 @@
 
 /* —— Downloads —— */
 .downloads {
-  background: linear-gradient(180deg, rgba(12, 18, 34, 0.03), transparent);
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.03), transparent);
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
@@ -433,8 +448,8 @@
 .platform-tab {
   padding: 0.55rem 1rem;
   border-radius: 8px;
-  border: 1.5px solid var(--line);
-  background: rgba(255, 255, 255, 0.55);
+  border: 1.5px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--ink-soft);
   font-weight: 600;
   font-size: 0.9rem;
@@ -444,12 +459,13 @@
 
 .platform-tab:hover {
   border-color: var(--fog);
+  color: var(--ink);
 }
 
 .platform-tab.is-active {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #f4f8fc;
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #061018;
 }
 
 .release-banner {
@@ -493,21 +509,21 @@
   flex-direction: column;
   gap: 0.65rem;
   padding: 1.25rem 1.35rem;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-strong);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--paper-elevated);
   text-align: left;
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 
 .download-card:hover {
-  border-color: rgba(15, 118, 110, 0.45);
-  box-shadow: 0 10px 28px rgba(12, 18, 34, 0.06);
+  border-color: rgba(45, 212, 191, 0.4);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 
 .download-card.is-recommended {
-  border-color: var(--teal);
-  background: linear-gradient(145deg, rgba(20, 184, 166, 0.1), rgba(255, 255, 255, 0.85));
+  border-color: rgba(45, 212, 191, 0.55);
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.1), var(--paper-elevated));
 }
 
 .download-card__head {
@@ -522,6 +538,7 @@
   font-family: var(--font-display);
   font-size: 1.15rem;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .download-card__badge {
@@ -530,9 +547,9 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--teal);
+  color: var(--teal-bright);
   padding: 0.2rem 0.45rem;
-  border: 1px solid rgba(15, 118, 110, 0.35);
+  border: 1px solid rgba(45, 212, 191, 0.35);
   border-radius: 4px;
 }
 
@@ -559,42 +576,53 @@
   margin-top: 2rem;
   padding: 1.25rem 1.35rem;
   border-left: 3px solid var(--teal-bright);
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .install-hint h3 {
   margin: 0;
   font-family: var(--font-display);
   font-size: 1.05rem;
+  color: var(--ink);
 }
 
 .install-hint pre {
   margin: 0.75rem 0 0;
   padding: 0.85rem 1rem;
   overflow-x: auto;
-  background: var(--ink);
+  background: #060a10;
   color: #d8e4f0;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 0.82rem;
   line-height: 1.5;
 }
 
 .install-hint code {
-  font-family: ui-monospace, "Cascadia Code", "IBM Plex Sans", monospace;
+  font-family: var(--font-mono);
 }
 
 /* —— Commands —— */
+.commands__heading {
+  margin: 2.25rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
 .commands {
   display: grid;
   gap: 0.65rem;
-  margin-top: 2rem;
-  font-family: ui-monospace, "Cascadia Code", monospace;
+  margin-top: 0.85rem;
+  font-family: var(--font-mono);
   font-size: 0.88rem;
 }
 
 .command-row {
   display: grid;
-  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  grid-template-columns: minmax(12rem, 18rem) 1fr;
   gap: 1rem;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--line);
@@ -609,12 +637,92 @@
 }
 
 .command-row code {
-  color: var(--teal);
+  color: var(--teal-bright);
   font-weight: 600;
 }
 
 .command-row span {
   color: var(--ink-soft);
+}
+
+/* —— About / contribute —— */
+.about {
+  border-top: 1px solid var(--line);
+}
+
+.about__grid {
+  display: grid;
+  gap: 2rem;
+  margin-top: 2.25rem;
+}
+
+@media (min-width: 720px) {
+  .about__grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 2.5rem;
+  }
+}
+
+.about__block h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.about__block p {
+  margin: 0.55rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  font-size: 0.98rem;
+  max-width: 42ch;
+}
+
+.about__block a:not(.btn) {
+  color: var(--teal);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.about__block a:not(.btn):hover {
+  color: var(--teal-bright);
+  text-decoration: underline;
+}
+
+.about__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+}
+
+/* Buttons must keep their own colors (about link rules are more specific). */
+.about__actions .btn--primary {
+  color: #061018;
+  background: var(--teal);
+  border-color: transparent;
+  text-decoration: none;
+}
+
+.about__actions .btn--primary:hover {
+  color: #061018;
+  background: var(--teal-bright);
+  text-decoration: none;
+}
+
+.about__actions .btn--ghost {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--line-strong);
+  text-decoration: none;
+}
+
+.about__actions .btn--ghost:hover {
+  color: var(--ink);
+  border-color: var(--teal-dim);
+  background: rgba(45, 212, 191, 0.06);
+  text-decoration: none;
 }
 
 /* —— Footer —— */
@@ -633,8 +741,13 @@
 }
 
 .footer a {
-  color: var(--ink);
+  color: var(--teal);
   font-weight: 500;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--teal-bright);
 }
 
 .footer__brand {
@@ -642,4 +755,17 @@
   font-weight: 700;
   color: var(--ink);
   letter-spacing: -0.03em;
+}
+
+.footer__author {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atmosphere__orb,
+  .terminal,
+  .terminal__cursor {
+    animation: none !important;
+  }
 }

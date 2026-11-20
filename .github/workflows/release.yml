@@ -4,9 +4,14 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver without v prefix (e.g. 0.1.0). Creates GitHub release v{version}.'
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -22,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,15 +41,27 @@ jobs:
               exit 1
             fi
             VERSION=${TAG#v}
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: version '$VERSION' does not match MAJOR.MINOR.PATCH"
+              exit 1
+            fi
+            TAG="v${VERSION}"
           else
             VERSION=$(grep -m1 '<version>' pom.xml | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' | tr -d ' ' | sed 's/-SNAPSHOT$//')
+            TAG="v${VERSION}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Release version: $VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION (tag $TAG)"
 
+  # GraalVM native builds are optional — failure must not block the GitHub Release.
   build-native:
     name: Build native artifacts
     needs: validate
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +148,7 @@ jobs:
           path: |
             dist/desk-portable-linux.zip
             dist/desk-portable.zip
+          if-no-files-found: error
           retention-days: 90
 
   build-rust:
@@ -151,6 +170,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust compile artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modules/desk-tui -> target
+          shared-key: desk-tui-release-${{ matrix.os }}
+          cache-on-failure: true
       - name: Build Rust editor (release)
         working-directory: modules/desk-tui
         run: cargo build --release
@@ -169,6 +194,7 @@ jobs:
         with:
           name: desk-tui-${{ matrix.os }}
           path: dist/upload/*
+          if-no-files-found: error
           retention-days: 90
 
   build-windows-installer:
@@ -206,6 +232,7 @@ jobs:
         shell: pwsh
         run: |
           $tui = Get-ChildItem dist/tui -Filter *.exe | Select-Object -First 1
+          if (-not $tui) { throw "Windows TUI binary missing" }
           ./packaging/installers/build-windows-installer.ps1 `
             -Version "${{ needs.validate.outputs.version }}" `
             -PortableDir "dist/desk-portable" `
@@ -218,6 +245,7 @@ jobs:
           path: |
             dist/Desk-Setup-*.exe
             dist/desk-portable-windows.zip
+          if-no-files-found: error
           retention-days: 90
 
   package-cli-setup:
@@ -238,11 +266,20 @@ jobs:
         with:
           name: desk-cli-setup
           path: dist/cli-setup/*
+          if-no-files-found: error
           retention-days: 90
 
   release:
     name: Create GitHub release
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish whenever a tag is pushed or workflow_dispatch runs — even if optional native jobs fail.
+    if: |
+      always()
+      && needs.validate.result == 'success'
+      && needs.build-portable.result == 'success'
+      && needs.build-rust.result == 'success'
+      && needs.build-windows-installer.result == 'success'
+      && needs.package-cli-setup.result == 'success'
+      && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
     needs:
       - validate
       - build-native
@@ -254,16 +291,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Download all artifacts
+      - name: Download all available artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/artifacts
+          merge-multiple: false
       - name: Flatten release assets
         run: |
           mkdir -p dist/release
+          if [ ! -d dist/artifacts ] || [ -z "$(find dist/artifacts -type f 2>/dev/null | head -1)" ]; then
+            echo "Error: no artifacts downloaded — cannot publish release" >&2
+            exit 1
+          fi
           find dist/artifacts -type f -print0 | while IFS= read -r -d '' f; do
             base=$(basename "$f")
-            # Avoid overwriting identical names from nested dirs
             dest="dist/release/$base"
             if [ -e "$dest" ]; then
               dest="dist/release/$(basename "$(dirname "$f")")-$base"
@@ -274,13 +315,23 @@ jobs:
           find . -type f ! -name '*.sha256' -print0 | while IFS= read -r -d '' f; do
             sha256sum "$f" > "${f}.sha256"
           done
+          echo "=== Release assets ==="
           ls -lah
-      - name: Create release
+          count=$(find . -type f ! -name '*.sha256' | wc -l)
+          if [ "$count" -lt 1 ]; then
+            echo "Error: empty release asset set" >&2
+            exit 1
+          fi
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Desk ${{ github.ref_name }}
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: Desk ${{ needs.validate.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
           body: |
             ## Downloads
 
@@ -292,7 +343,10 @@ jobs:
             | `desk-cli-setup-windows.ps1` | Windows CLI setup |
             | `desk-cli-setup.sh` | macOS / Linux CLI setup |
             | `desk-portable-*.zip` | Portable zip (unzip & run) |
-            | `desk-native-*` / `desk-tui-*` | Standalone binaries |
+            | `desk-tui-*` | Desk TUI editor (Rust) binary |
+            | `desk-native-*` | GraalVM native binary (when available) |
+
+            ### Quick install
 
             ```bash
             curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/desk-cli-setup.sh | bash
@@ -301,6 +355,8 @@ jobs:
             ```powershell
             irm https://github.com/${{ github.repository }}/releases/latest/download/desk-cli-setup-windows.ps1 | iex
             ```
+
+            Desk is open source — contributions welcome.
           files: dist/release/*
-          draft: false
-          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

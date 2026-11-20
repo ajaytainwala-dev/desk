@@ -14,6 +14,9 @@ import {
   type PlatformId,
 } from "./releases";
 
+const GITHUB_REPO_URL = "https://github.com/ajaytainwala-dev/desk";
+const AUTHOR_URL = "https://www.ajaytainwala.dev";
+
 const PLATFORMS: { id: PlatformId; label: string }[] = [
   { id: "windows", label: "Windows" },
   { id: "macos", label: "macOS" },
@@ -22,8 +25,8 @@ const PLATFORMS: { id: PlatformId; label: string }[] = [
 
 const FEATURES = [
   {
-    title: "Terminal editor",
-    body: "A focused Rust TUI — open files fast, format and check Java without leaving the keyboard.",
+    title: "Desk TUI editor",
+    body: "A focused Rust terminal UI (Ratatui) — open files fast, edit Java without leaving the keyboard.",
   },
   {
     title: "Format & check",
@@ -35,12 +38,30 @@ const FEATURES = [
   },
 ];
 
-const COMMANDS: { cmd: string; desc: string }[] = [
-  { cmd: "desk", desc: "Launch the TUI editor" },
+const CLI_COMMANDS: { cmd: string; desc: string }[] = [
+  { cmd: "desk", desc: "Launch the Desk TUI editor" },
+  { cmd: "desk edit Main.java", desc: "Open a file in the TUI" },
   { cmd: "desk fmt Main.java", desc: "Format Java in place" },
   { cmd: "desk check Main.java", desc: "Report compile diagnostics" },
   { cmd: "desk compile Main.java", desc: "Compile with javax.tools" },
   { cmd: "desk run Main", desc: "Run a compiled class" },
+  { cmd: "desk help", desc: "List CLI commands" },
+  { cmd: "desk version", desc: "Print version" },
+];
+
+const TUI_COMMANDS: { cmd: string; desc: string }[] = [
+  { cmd: "F1", desc: "Toggle in-editor help overlay" },
+  { cmd: "Ctrl+N / Ctrl+O / Ctrl+S", desc: "New file, open tree, save" },
+  { cmd: "Ctrl+Q", desc: "Quit the editor" },
+  { cmd: "i / Esc / v", desc: "Insert, normal, and visual modes" },
+  { cmd: "Ctrl+F / Ctrl+H", desc: "Find and replace" },
+  { cmd: "Ctrl+J", desc: "Toggle integrated terminal" },
+  { cmd: "F3 / F8 / F4", desc: "Explorer, output panel, line numbers" },
+  { cmd: "F5 / F6 / F9 / F10", desc: "Run, compile, format, check" },
+  { cmd: "F7", desc: "Stop the running Java job" },
+  { cmd: ":w / :wq / :q", desc: "Save, save & quit, quit (command mode)" },
+  { cmd: ":fmt / :check / :help", desc: "Format, check, and help commands" },
+  { cmd: "Alt+F / E / V / R", desc: "Open File, Edit, View, Run menus" },
 ];
 
 function recommendedKind(platform: PlatformId): DownloadKind {
@@ -55,12 +76,12 @@ function installSnippet(
   const tag = release?.tag ?? "latest";
   if (platform === "windows") {
     return `# PowerShell — CLI setup from latest release
-irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup-windows.ps1 | iex
+irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex
 
 # Or download Desk-Setup-${tag.replace(/^v/, "")}.exe from the release page`;
   }
   return `# curl | bash — installs Desk CLI for your architecture
-curl -fsSL https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup.sh | bash`;
+curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup.sh | bash`;
 }
 
 export default function App() {
@@ -132,6 +153,7 @@ export default function App() {
           <a href="#features">Features</a>
           <a href="#downloads">Downloads</a>
           <a href="#commands">Commands</a>
+          <a href="#about">About</a>
           <a className="nav__cta" href="#downloads">
             Get Desk
           </a>
@@ -142,10 +164,12 @@ export default function App() {
         <section className="hero">
           <motion.div className="hero__copy" {...fade}>
             <h1 className="hero__brand">Desk</h1>
-            <p className="hero__headline">Java workbench for the terminal.</p>
+            <p className="hero__headline">
+              Java workbench with a Desk TUI editor.
+            </p>
             <p className="hero__lede">
-              Format, check, compile, and edit — a lightweight toolkit that
-              stays out of your way.
+              Format, check, compile, and edit in the terminal — a lightweight
+              toolkit built around a Rust TUI that stays out of your way.
             </p>
             <div className="hero__actions">
               <a className="btn btn--primary" href={primaryHref}>
@@ -160,14 +184,16 @@ export default function App() {
               {loading && "Checking latest release…"}
               {!loading && release && (
                 <>
-                  Latest{" "}
-                  <strong>{release.tag}</strong>
+                  Latest <strong>{release.tag}</strong>
                   {release.publishedAt
-                    ? ` · ${new Date(release.publishedAt).toLocaleDateString(undefined, {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}`
+                    ? ` · ${new Date(release.publishedAt).toLocaleDateString(
+                        undefined,
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        },
+                      )}`
                     : null}
                   {" · "}
                   <a href={release.htmlUrl}>Release notes</a>
@@ -189,9 +215,16 @@ export default function App() {
                 <span className="terminal__dot" />
                 <span className="terminal__dot" />
                 <span className="terminal__dot" />
-                <span className="terminal__title">desk — Main.java</span>
+                <span className="terminal__title">desk TUI — Main.java</span>
               </div>
               <div className="terminal__body">
+                <p className="terminal__line">
+                  <span className="terminal__prompt">$</span>{" "}
+                  <span className="terminal__cmd">desk</span>
+                </p>
+                <p className="terminal__line terminal__out">
+                  Desk TUI editor · Ratatui · open Main.java
+                </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
                   <span className="terminal__cmd">desk check Main.java</span>
@@ -221,10 +254,12 @@ export default function App() {
 
         <section className="section" id="features">
           <p className="section__eyebrow">Why Desk</p>
-          <h2 className="section__title">One toolkit. Stay in the terminal.</h2>
+          <h2 className="section__title">
+            One toolkit. Stay in the terminal.
+          </h2>
           <p className="section__lede">
-            Built for quick Java loops — edit in a Ratatui TUI, then format,
-            diagnose, and run without switching apps.
+            Built for quick Java loops — edit in the Desk TUI editor, then
+            format, diagnose, and run without switching apps.
           </p>
           <div className="features">
             {FEATURES.map((f) => (
@@ -242,8 +277,8 @@ export default function App() {
           <h2 className="section__title">Installers that stay current.</h2>
           <p className="section__lede">
             Every visit loads the newest GitHub release. Ship a tag — the
-            buttons below pick up the new zip, CLI setup, and Windows installer
-            automatically.
+            buttons below pick up the new zip, CLI setup, Windows installer, and
+            Desk TUI binaries automatically.
           </p>
 
           <div
@@ -287,7 +322,9 @@ export default function App() {
             {options.map((opt) => {
               const asset = resolveDownload(release, opt.kind, platform);
               const recommended = opt.kind === recommendedKind(platform);
-              const href = asset?.url ?? (release ? release.htmlUrl : releasesPageUrl());
+              const href =
+                asset?.url ??
+                (release ? release.htmlUrl : releasesPageUrl());
               const label = asset
                 ? `Download ${opt.title}`
                 : release
@@ -328,14 +365,29 @@ export default function App() {
         </section>
 
         <section className="section" id="commands">
-          <p className="section__eyebrow">CLI</p>
-          <h2 className="section__title">Commands that fit a muscle memory.</h2>
+          <p className="section__eyebrow">Commands</p>
+          <h2 className="section__title">
+            CLI and TUI that fit a muscle memory.
+          </h2>
           <p className="section__lede">
-            Run bare <code>desk</code> for the TUI, or pass a subcommand for
-            scripted workflows.
+            Run bare <code>desk</code> for the Desk TUI editor, pass a
+            subcommand for scripts, or use the in-editor shortcuts once you are
+            inside the TUI (press <code>F1</code> anytime).
           </p>
+
+          <h3 className="commands__heading">CLI</h3>
           <div className="commands">
-            {COMMANDS.map((c) => (
+            {CLI_COMMANDS.map((c) => (
+              <div className="command-row" key={c.cmd}>
+                <code>{c.cmd}</code>
+                <span>{c.desc}</span>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="commands__heading">TUI shortcuts</h3>
+          <div className="commands">
+            {TUI_COMMANDS.map((c) => (
               <div className="command-row" key={c.cmd}>
                 <code>{c.cmd}</code>
                 <span>{c.desc}</span>
@@ -343,17 +395,79 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        <section className="section about" id="about">
+          <p className="section__eyebrow">Community</p>
+          <h2 className="section__title">Open source. Built to share.</h2>
+          <p className="section__lede">
+            Desk — including the Desk TUI editor — is free and open source.
+            Contributions, issues, and ideas are welcome.
+          </p>
+          <div className="about__grid">
+            <div className="about__block">
+              <h3>Author</h3>
+              <p>
+                Created by{" "}
+                <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+                  Ajay Tainwala
+                </a>
+                . Visit{" "}
+                <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+                  ajaytainwala.dev
+                </a>{" "}
+                for more projects and work.
+              </p>
+            </div>
+            <div className="about__block">
+              <h3>Contribute</h3>
+              <p>
+                Fork the repo, open a pull request, or file an issue. Help
+                improve the Desk TUI editor, CLI, formatter, packaging, or docs.
+              </p>
+              <div className="about__actions">
+                <a
+                  className="btn btn--primary"
+                  href={GITHUB_REPO_URL}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  View on GitHub
+                </a>
+                <a
+                  className="btn btn--ghost"
+                  href={`${GITHUB_REPO_URL}/issues`}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Report an issue
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer className="footer">
         <div>
           <span className="footer__brand">Desk</span>
-          <span> · MIT License</span>
+          <span> · MIT License · Open source</span>
+          <div className="footer__author">
+            Author:{" "}
+            <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+              Ajay Tainwala
+            </a>
+          </div>
         </div>
         <div>
-          <a href="https://github.com/ajaytainwala-dev/javaproject">GitHub</a>
+          <a href={GITHUB_REPO_URL} rel="noopener noreferrer" target="_blank">
+            GitHub
+          </a>
           {" · "}
           <a href={releasesPageUrl()}>Releases</a>
+          {" · "}
+          <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+            ajaytainwala.dev
+          </a>
         </div>
       </footer>
     </div>

@@ -8,6 +8,9 @@
 | `.github/workflows/native-build.yml` | tags, releases | Native Image builds per OS/arch |
 | `.github/workflows/portable-build.yml` | tags, releases | jlink portable runtime packages |
 | `.github/workflows/release.yml` | version tags (`v*`) | Release verification, checksums, publishing |
+| `.github/workflows/sync-release-links.yml` | release published / after Release | Updates `website/public/latest-release.json` download links |
+
+Build jobs cache Maven dependencies (`setup-java` `cache: maven`) and Rust compile artifacts (`Swatinem/rust-cache`) to cut compile time on repeat runs.
 
 ## CI job structure (ci.yml)
 
@@ -29,6 +32,19 @@ Jobs use explicit dependencies. One platform's failure does not hide another's. 
 
 ## Release flow
 
-Tag (`v1.0.0`) → checkout exact commit → verify version/tag → run tests → build native artifacts → build portable artifacts → run smoke tests → generate checksums → generate release notes → publish GitHub release → upload artifacts.
+Tag (`v1.0.0`) **or** Actions → Release → Run workflow with version input → validate version → build portable / Rust TUI / Windows installer / CLI setup (required) → build GraalVM native images (optional, `continue-on-error`) → generate checksums → publish GitHub Release with assets.
 
-Checksums (SHA256) are generated for every release file. Only targets that built and passed verification are published.
+Checksums (SHA256) are generated for every release file. GraalVM native failures do not block publishing; core installers and Desk TUI binaries still ship.
+
+### Trigger a release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Or: GitHub → Actions → **Release** → Run workflow → enter `0.1.0`.
+
+### Website release links
+
+After a release publishes, **Sync release links** writes resolved asset URLs into `website/public/latest-release.json` and commits to the default branch. The marketing site prefers the live GitHub Releases API and falls back to that file when the API is unavailable.

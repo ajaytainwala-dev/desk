@@ -1,5 +1,5 @@
 /** GitHub repo that hosts Desk release artifacts. */
-export const GITHUB_REPO = "ajaytainwala-dev/javaproject";
+export const GITHUB_REPO = "ajaytainwala-dev/desk";
 
 export type PlatformId = "windows" | "macos" | "linux";
 
@@ -93,8 +93,8 @@ export const DOWNLOAD_OPTIONS: DownloadOption[] = [
   },
   {
     kind: "tui",
-    title: "TUI editor binary",
-    description: "Rust terminal UI binary (desk).",
+    title: "Desk TUI editor",
+    description: "Standalone Rust Desk TUI editor binary (Ratatui).",
     patterns: [],
     platforms: ["windows", "macos", "linux"],
   },
@@ -180,41 +180,82 @@ interface GhRelease {
   assets: GhAsset[];
 }
 
+interface BundledRelease {
+  tag: string | null;
+  name: string | null;
+  publishedAt: string | null;
+  htmlUrl: string;
+  assets: ReleaseAsset[];
+}
+
+/** Prefer the Actions-synced snapshot when the live API is unavailable. */
+async function fetchBundledRelease(
+  signal?: AbortSignal,
+): Promise<LatestRelease | null> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}latest-release.json`, {
+      signal,
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as BundledRelease;
+    if (!data.tag || !data.assets?.length) return null;
+    return {
+      tag: data.tag,
+      name: data.name || data.tag,
+      publishedAt: data.publishedAt,
+      htmlUrl: data.htmlUrl,
+      assets: data.assets,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Fetch the newest published GitHub release. Each site load picks up new
- * assets after a tag/release — no website redeploy required for link updates
- * when asset names match the patterns above.
+ * Fetch the newest published GitHub release. Falls back to
+ * `public/latest-release.json` (kept current by the Sync release links
+ * workflow) when the API is rate-limited or offline.
  */
 export async function fetchLatestRelease(
   signal?: AbortSignal,
 ): Promise<LatestRelease> {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
-  const res = await fetch(url, {
-    signal,
-    headers: {
-      Accept: "application/vnd.github+json",
-    },
-  });
+  try {
+    const res = await fetch(url, {
+      signal,
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    });
 
-  if (res.status === 404) {
-    throw new Error("No published release yet");
-  }
-  if (!res.ok) {
-    throw new Error(`GitHub API ${res.status}`);
-  }
+    if (res.status === 404) {
+      const bundled = await fetchBundledRelease(signal);
+      if (bundled) return bundled;
+      throw new Error("No published release yet");
+    }
+    if (!res.ok) {
+      throw new Error(`GitHub API ${res.status}`);
+    }
 
-  const data = (await res.json()) as GhRelease;
-  return {
-    tag: data.tag_name,
-    name: data.name || data.tag_name,
-    publishedAt: data.published_at,
-    htmlUrl: data.html_url,
-    assets: (data.assets ?? []).map((a) => ({
-      name: a.name,
-      url: a.browser_download_url,
-      size: a.size,
-    })),
-  };
+    const data = (await res.json()) as GhRelease;
+    return {
+      tag: data.tag_name,
+      name: data.name || data.tag_name,
+      publishedAt: data.published_at,
+      htmlUrl: data.html_url,
+      assets: (data.assets ?? []).map((a) => ({
+        name: a.name,
+        url: a.browser_download_url,
+        size: a.size,
+      })),
+    };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    const bundled = await fetchBundledRelease(signal);
+    if (bundled) return bundled;
+    throw err instanceof Error ? err : new Error("Could not load releases");
+  }
 }
 
 /** Releases page fallback when a specific asset is missing. */
