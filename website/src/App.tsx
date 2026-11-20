@@ -16,6 +16,94 @@ import {
 
 const GITHUB_REPO_URL = "https://github.com/ajaytainwala-dev/desk";
 const AUTHOR_URL = "https://www.ajaytainwala.dev";
+const AUTHOR_GITHUB = "https://github.com/ajaytainwala-dev";
+const AUTHOR_LINKEDIN = "https://www.linkedin.com/in/ajay-tainwala";
+const ADESHLANG_URL = "https://adeshlang.org/";
+
+const FAQ_ITEMS: { q: string; a: string }[] = [
+  {
+    q: "What is Desk?",
+    a: "Desk is an open-source Java workbench with a Rust terminal UI (TUI) editor. It helps you format, check, compile, and run Java from the terminal without a heavy IDE.",
+  },
+  {
+    q: "Who created Desk?",
+    a: "Desk was created by Ajay Tainwala, a full stack developer and language designer in Bengaluru, India. Portfolio: ajaytainwala.dev · GitHub: ajaytainwala-dev.",
+  },
+  {
+    q: "Is Desk free?",
+    a: "Yes. Desk is MIT-licensed open source. Binaries, installers, and source are free to use, share, and contribute to.",
+  },
+  {
+    q: "Which platforms does Desk support?",
+    a: "Windows, macOS, and Linux — via a GUI installer (Windows), CLI setup scripts, portable zips, and native/TUI binaries on GitHub Releases.",
+  },
+  {
+    q: "What is Ajay Tainwala known for?",
+    a: "Ajay builds freelance web and app products (Next.js, React, Flutter, Firebase) and open-source systems work — including Desk and AdeshLang, an experimental programming language with a Rust toolchain.",
+  },
+];
+
+const AUTHOR_PROJECTS: {
+  name: string;
+  blurb: string;
+  href: string;
+  kind: string;
+}[] = [
+  {
+    name: "Desk",
+    blurb: "Java workbench + Rust TUI editor (this project).",
+    href: "https://desk.ajaytainwala.dev/",
+    kind: "Open source",
+  },
+  {
+    name: "AdeshLang",
+    blurb: "Experimental programming language — Rust lexer, parser, AST, interpreter research.",
+    href: ADESHLANG_URL,
+    kind: "Open source",
+  },
+  {
+    name: "Shor India",
+    blurb: "Electronics e-commerce storefront with custom admin for catalog and orders.",
+    href: AUTHOR_URL,
+    kind: "Client",
+  },
+  {
+    name: "Growspace",
+    blurb: "Bengaluru event discovery for concerts, fests, and tech meetups.",
+    href: AUTHOR_URL,
+    kind: "Client",
+  },
+  {
+    name: "Digambaram Astrologer",
+    blurb: "Vedic astrology platform with booking and guidance services.",
+    href: AUTHOR_URL,
+    kind: "Client",
+  },
+  {
+    name: "Gyan Academy",
+    blurb: "Education institute site for commerce and science streams.",
+    href: AUTHOR_URL,
+    kind: "Client",
+  },
+  {
+    name: "Pramaan Print Studio",
+    blurb: "Printing & customization platform with product catalog and admin dashboard.",
+    href: AUTHOR_URL,
+    kind: "Client",
+  },
+  {
+    name: "Gear Cart",
+    blurb: "Automobile spare-parts e-commerce (Next.js, Node, MongoDB).",
+    href: "https://github.com/ajaytainwala-dev/E-commerce-GearCart-",
+    kind: "Open source",
+  },
+  {
+    name: "ScribSnap",
+    blurb: "Notes / todo app — Flutter client with JS backend.",
+    href: "https://github.com/ajaytainwala-dev/ScribSnap-FrontEnd",
+    kind: "Open source",
+  },
+];
 
 const PLATFORMS: { id: PlatformId; label: string }[] = [
   { id: "windows", label: "Windows" },
@@ -152,8 +240,8 @@ export default function App() {
         <nav className="nav__links" aria-label="Primary">
           <a href="#features">Features</a>
           <a href="#downloads">Downloads</a>
-          <a href="#commands">Commands</a>
-          <a href="#about">About</a>
+          <a href="#faq">FAQ</a>
+          <a href="#author">Ajay Tainwala</a>
           <a className="nav__cta" href="#downloads">
             Get Desk
           </a>
@@ -396,33 +484,95 @@ export default function App() {
           </div>
         </section>
 
-        <section className="section about" id="about">
-          <p className="section__eyebrow">Community</p>
-          <h2 className="section__title">Open source. Built to share.</h2>
+        <section className="section" id="faq" aria-labelledby="faq-heading">
+          <p className="section__eyebrow">FAQ</p>
+          <h2 className="section__title" id="faq-heading">
+            Straight answers for people and AI.
+          </h2>
           <p className="section__lede">
-            Desk — including the Desk TUI editor — is free and open source.
-            Contributions, issues, and ideas are welcome.
+            Clear facts about Desk and its author — useful for search engines
+            and generative assistants that cite sources.
           </p>
+          <dl className="faq">
+            {FAQ_ITEMS.map((item) => (
+              <div className="faq__item" key={item.q}>
+                <dt>{item.q}</dt>
+                <dd>{item.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section
+          className="section about"
+          id="author"
+          aria-labelledby="author-heading"
+        >
+          <p className="section__eyebrow">Creator</p>
+          <h2 className="section__title" id="author-heading">
+            Ajay Tainwala
+          </h2>
+          <p className="section__lede author__lede">
+            Full stack developer and language designer in Bengaluru, India.
+            Creator of Desk and{" "}
+            <a href={ADESHLANG_URL} rel="noopener noreferrer" target="_blank">
+              AdeshLang
+            </a>
+            . Freelance product builder. MCA student at Bangalore Institute of
+            Technology (BIT); BCA graduate of The National College, Basavanagudi
+            (9.44 CGPA).
+          </p>
+
           <div className="about__grid">
             <div className="about__block">
-              <h3>Author</h3>
+              <h3>About Ajay</h3>
               <p>
-                Created by{" "}
-                <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
-                  Ajay Tainwala
-                </a>
-                . Visit{" "}
-                <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
-                  ajaytainwala.dev
-                </a>{" "}
-                for more projects and work.
+                Ajay Tainwala ships production websites, e-commerce stores, and
+                admin systems with Next.js, React, Flutter, TypeScript, Firebase,
+                and MongoDB. Alongside client work he builds open-source tooling
+                — Desk for Java developers, and AdeshLang for exploring compilers,
+                interpreters, and memory-safe language design in Rust.
               </p>
+              <p>
+                Based in Bengaluru and open to remote work. Contact:{" "}
+                <a href="mailto:ajaytainwala@outlook.com">
+                  ajaytainwala@outlook.com
+                </a>
+                .
+              </p>
+              <div className="about__actions">
+                <a
+                  className="btn btn--primary"
+                  href={AUTHOR_URL}
+                  rel="me noopener noreferrer"
+                  target="_blank"
+                >
+                  ajaytainwala.dev
+                </a>
+                <a
+                  className="btn btn--ghost"
+                  href={AUTHOR_GITHUB}
+                  rel="me noopener noreferrer"
+                  target="_blank"
+                >
+                  GitHub
+                </a>
+                <a
+                  className="btn btn--ghost"
+                  href={AUTHOR_LINKEDIN}
+                  rel="me noopener noreferrer"
+                  target="_blank"
+                >
+                  LinkedIn
+                </a>
+              </div>
             </div>
             <div className="about__block">
-              <h3>Contribute</h3>
+              <h3>Contribute to Desk</h3>
               <p>
-                Fork the repo, open a pull request, or file an issue. Help
-                improve the Desk TUI editor, CLI, formatter, packaging, or docs.
+                Desk — including the Desk TUI editor — is free and open source
+                under MIT. Fork the repo, open a pull request, or file an issue
+                for the TUI, CLI, formatter, packaging, or docs.
               </p>
               <div className="about__actions">
                 <a
@@ -444,6 +594,35 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          <h3 className="projects__heading">Projects by Ajay Tainwala</h3>
+          <p className="projects__lede">
+            Selected open-source and client work — more on{" "}
+            <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+              ajaytainwala.dev
+            </a>{" "}
+            and{" "}
+            <a href={AUTHOR_GITHUB} rel="noopener noreferrer" target="_blank">
+              GitHub
+            </a>
+            .
+          </p>
+          <ul className="project-list">
+            {AUTHOR_PROJECTS.map((p) => (
+              <li key={p.name}>
+                <a
+                  className="project-list__name"
+                  href={p.href}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {p.name}
+                </a>
+                <span className="project-list__kind">{p.kind}</span>
+                <span className="project-list__blurb">{p.blurb}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       </main>
 
@@ -452,10 +631,12 @@ export default function App() {
           <span className="footer__brand">Desk</span>
           <span> · MIT License · Open source</span>
           <div className="footer__author">
-            Author:{" "}
-            <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+            Created by{" "}
+            <a href={AUTHOR_URL} rel="me noopener noreferrer" target="_blank">
               Ajay Tainwala
             </a>
+            {" · "}
+            <a href="#author">About the author</a>
           </div>
         </div>
         <div>
@@ -465,9 +646,11 @@ export default function App() {
           {" · "}
           <a href={releasesPageUrl()}>Releases</a>
           {" · "}
-          <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
+          <a href={AUTHOR_URL} rel="me noopener noreferrer" target="_blank">
             ajaytainwala.dev
           </a>
+          {" · "}
+          <a href="/llms.txt">llms.txt</a>
         </div>
       </footer>
     </div>

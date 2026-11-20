@@ -4,22 +4,245 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Desk — Open-source Java workbench &amp; Rust TUI editor by Ajay Tainwala</title>
     <meta
       name="description"
-      content="Desk — open-source Java workbench with a Rust Desk TUI editor, formatter, check, compile, and run. By Ajay Tainwala."
+      content="Desk is an open-source Java workbench with a Rust TUI editor, formatter, check, compile, and run tools. Created by Ajay Tainwala (ajaytainwala.dev) in Bengaluru — full stack developer, freelancer, and creator of AdeshLang."
     />
+    <meta
+      name="keywords"
+      content="Desk, Desk TUI, Java workbench, Rust TUI editor, Ratatui, Java formatter, Ajay Tainwala, ajaytainwala, AdeshLang, open source, Bengaluru developer, full stack developer"
+    />
+    <meta name="author" content="Ajay Tainwala" />
+    <meta name="creator" content="Ajay Tainwala" />
+    <meta name="publisher" content="Ajay Tainwala" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <link rel="canonical" href="https://desk.ajaytainwala.dev/" />
+    <link rel="alternate" hreflang="en" href="https://desk.ajaytainwala.dev/" />
     <meta name="theme-color" content="#0a0e14" />
     <meta name="color-scheme" content="dark" />
+    <meta name="application-name" content="Desk" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Desk by Ajay Tainwala" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://desk.ajaytainwala.dev/" />
+    <meta
+      property="og:title"
+      content="Desk — Java workbench &amp; Rust TUI editor by Ajay Tainwala"
+    />
+    <meta
+      property="og:description"
+      content="Open-source Java toolkit with a Rust Desk TUI editor. Format, check, compile, and run from the terminal. Built by Ajay Tainwala."
+    />
+    <meta property="og:image" content="https://desk.ajaytainwala.dev/og.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:alt" content="Desk — Java workbench and TUI editor by Ajay Tainwala" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Desk — Java workbench &amp; Rust TUI by Ajay Tainwala" />
+    <meta
+      name="twitter:description"
+      content="Open-source Java workbench with a Rust TUI editor. Created by Ajay Tainwala — full stack developer in Bengaluru."
+    />
+    <meta name="twitter:image" content="https://desk.ajaytainwala.dev/og.svg" />
+
+    <!-- GEO / AI discovery hints -->
+    <meta name="ai-content-declaration" content="human-authored product documentation and marketing copy" />
+    <link rel="describedby" href="https://desk.ajaytainwala.dev/llms.txt" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <title>Desk — Java workbench &amp; TUI editor</title>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://desk.ajaytainwala.dev/#website",
+            "url": "https://desk.ajaytainwala.dev/",
+            "name": "Desk",
+            "alternateName": ["Desk TUI", "Desk Java workbench"],
+            "description": "Open-source Java workbench with a Rust TUI editor, formatter, check, compile, and run helpers.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://www.ajaytainwala.dev/#person" },
+            "creator": { "@id": "https://www.ajaytainwala.dev/#person" },
+            "about": { "@id": "https://desk.ajaytainwala.dev/#software" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://desk.ajaytainwala.dev/#software",
+            "name": "Desk",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Code editor / Java toolkit",
+            "operatingSystem": "Windows, macOS, Linux",
+            "url": "https://desk.ajaytainwala.dev/",
+            "downloadUrl": "https://github.com/ajaytainwala-dev/desk/releases/latest",
+            "softwareVersion": "0.1.0",
+            "license": "https://opensource.org/licenses/MIT",
+            "isAccessibleForFree": true,
+            "description": "Desk is a lightweight, cross-platform Java workbench featuring a Rust terminal UI (TUI) editor built with Ratatui, plus CLI commands for format, check, compile, and run. It is designed for developers who prefer the terminal over a heavy IDE.",
+            "programmingLanguage": ["Java", "Rust"],
+            "codeRepository": "https://github.com/ajaytainwala-dev/desk",
+            "author": { "@id": "https://www.ajaytainwala.dev/#person" },
+            "creator": { "@id": "https://www.ajaytainwala.dev/#person" },
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "featureList": [
+              "Rust Desk TUI editor (Ratatui)",
+              "Java source formatter (desk fmt)",
+              "Compile diagnostics (desk check)",
+              "Compile and run via JDK APIs",
+              "Windows GUI installer and portable zips",
+              "CLI setup scripts for macOS and Linux"
+            ]
+          },
+          {
+            "@type": "Person",
+            "@id": "https://www.ajaytainwala.dev/#person",
+            "name": "Ajay Tainwala",
+            "url": "https://www.ajaytainwala.dev/",
+            "image": "https://ajaytainwala.vercel.app/opengraph-image.png",
+            "jobTitle": "Full Stack Developer",
+            "description": "Ajay Tainwala is a full stack developer and language designer based in Bengaluru, India. He creates freelance web and app products, open-source tools such as Desk, and AdeshLang, an experimental programming language. He is pursuing an MCA at Bangalore Institute of Technology (BIT).",
+            "email": "mailto:ajaytainwala@outlook.com",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Bengaluru",
+              "addressRegion": "Karnataka",
+              "addressCountry": "IN"
+            },
+            "alumniOf": [
+              {
+                "@type": "CollegeOrUniversity",
+                "name": "The National College, Basavanagudi"
+              },
+              {
+                "@type": "CollegeOrUniversity",
+                "name": "Bangalore Institute of Technology"
+              }
+            ],
+            "knowsAbout": [
+              "Full stack web development",
+              "Next.js",
+              "React",
+              "TypeScript",
+              "Rust",
+              "Java",
+              "Flutter",
+              "Compiler design",
+              "AdeshLang",
+              "Firebase",
+              "MongoDB"
+            ],
+            "sameAs": [
+              "https://www.ajaytainwala.dev/",
+              "https://ajaytainwala.vercel.app/",
+              "https://github.com/ajaytainwala-dev",
+              "https://www.linkedin.com/in/ajay-tainwala",
+              "https://adeshlang.org/",
+              "https://desk.ajaytainwala.dev/"
+            ],
+            "owns": [
+              { "@id": "https://desk.ajaytainwala.dev/#software" }
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://desk.ajaytainwala.dev/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is Desk?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Desk is an open-source Java workbench created by Ajay Tainwala. It includes a Rust terminal UI (TUI) editor and CLI commands to format, check, compile, and run Java code without a heavy IDE."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Who created Desk?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Desk was created by Ajay Tainwala, a full stack developer in Bengaluru, India. His portfolio is at https://www.ajaytainwala.dev/ and his GitHub is https://github.com/ajaytainwala-dev."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How do I install Desk?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Download installers from https://desk.ajaytainwala.dev/#downloads or the latest GitHub release. On Windows use Desk-Setup.exe or the PowerShell CLI setup. On macOS and Linux use the curl | bash CLI setup script or a portable zip."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What else has Ajay Tainwala built?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Ajay Tainwala built AdeshLang (an open-source programming language), Desk, and freelance products including Shor India, Growspace, Digambaram Astrologer, Gyan Academy, Pramaan Print Studio, Gear Cart e-commerce, ScribSnap, and other web apps using Next.js, React, Flutter, Firebase, and Rust."
+                }
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Desk",
+                "item": "https://desk.ajaytainwala.dev/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Downloads",
+                "item": "https://desk.ajaytainwala.dev/#downloads"
+              },
+              {
+                "@type": "ListItem",
+                "position": 3,
+                "name": "About Ajay Tainwala",
+                "item": "https://desk.ajaytainwala.dev/#author"
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <article>
+        <h1>Desk — Java workbench &amp; Rust TUI editor</h1>
+        <p>
+          Desk is an open-source Java workbench with a Rust TUI editor, created by
+          <strong>Ajay Tainwala</strong>
+          (<a href="https://www.ajaytainwala.dev/">ajaytainwala.dev</a>).
+          Format, check, compile, and run Java from the terminal.
+        </p>
+        <p>
+          Download:
+          <a href="https://github.com/ajaytainwala-dev/desk/releases/latest"
+            >latest GitHub release</a
+          >.
+        </p>
+      </article>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
