@@ -2,7 +2,7 @@ use crate::buffer::{Buffer, Selection};
 use crate::config::{EditorConfig, LineNumberMode, Theme};
 use crate::highlighter::Language;
 use crate::mode::Mode;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -94,11 +94,7 @@ pub struct FileNode {
 impl FileNode {
     pub fn icon(&self) -> &'static str {
         if self.is_dir {
-            if self.expanded {
-                "▾"
-            } else {
-                "▸"
-            }
+            if self.expanded { "▾" } else { "▸" }
         } else {
             match self
                 .path
@@ -1222,37 +1218,39 @@ impl App {
 
         let waiter = Arc::clone(&child_arc);
         let tx_wait = tx.clone();
-        thread::spawn(move || loop {
-            let status = {
-                let mut guard = waiter.lock().unwrap_or_else(|e| e.into_inner());
-                match guard.as_mut() {
-                    Some(child) => child.try_wait(),
-                    None => {
+        thread::spawn(move || {
+            loop {
+                let status = {
+                    let mut guard = waiter.lock().unwrap_or_else(|e| e.into_inner());
+                    match guard.as_mut() {
+                        Some(child) => child.try_wait(),
+                        None => {
+                            let _ = tx_wait.send(JobMessage::Finished {
+                                success: false,
+                                cancelled: true,
+                            });
+                            return;
+                        }
+                    }
+                };
+                match status {
+                    Ok(Some(status)) => {
+                        let _ = tx_wait.send(JobMessage::Finished {
+                            success: status.success(),
+                            cancelled: false,
+                        });
+                        let mut guard = waiter.lock().unwrap_or_else(|e| e.into_inner());
+                        *guard = None;
+                        return;
+                    }
+                    Ok(None) => thread::sleep(Duration::from_millis(20)),
+                    Err(_) => {
                         let _ = tx_wait.send(JobMessage::Finished {
                             success: false,
-                            cancelled: true,
+                            cancelled: false,
                         });
                         return;
                     }
-                }
-            };
-            match status {
-                Ok(Some(status)) => {
-                    let _ = tx_wait.send(JobMessage::Finished {
-                        success: status.success(),
-                        cancelled: false,
-                    });
-                    let mut guard = waiter.lock().unwrap_or_else(|e| e.into_inner());
-                    *guard = None;
-                    return;
-                }
-                Ok(None) => thread::sleep(Duration::from_millis(20)),
-                Err(_) => {
-                    let _ = tx_wait.send(JobMessage::Finished {
-                        success: false,
-                        cancelled: false,
-                    });
-                    return;
                 }
             }
         });
@@ -1780,11 +1778,7 @@ impl App {
             "cd" => {
                 let target = if parts.len() > 1 {
                     let p = PathBuf::from(parts[1]);
-                    if p.is_absolute() {
-                        p
-                    } else {
-                        self.cwd.join(p)
-                    }
+                    if p.is_absolute() { p } else { self.cwd.join(p) }
                 } else {
                     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
                 };
@@ -2089,7 +2083,7 @@ mod tests {
     use super::*;
     use crate::input::handle_key_event;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use std::io::Write;
 
     fn test_app() -> App {
@@ -2171,10 +2165,11 @@ mod tests {
         app.terminal_input = "pwd".to_string();
         app.terminal_input_enter();
         let cwd_hint = dir.path().to_string_lossy();
-        assert!(app
-            .terminal_output
-            .iter()
-            .any(|l| l.contains(cwd_hint.as_ref()) || l.contains("out.txt")));
+        assert!(
+            app.terminal_output
+                .iter()
+                .any(|l| l.contains(cwd_hint.as_ref()) || l.contains("out.txt"))
+        );
 
         app.terminal_input = format!("cd {}", dir.path().display());
         app.terminal_input_enter();

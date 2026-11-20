@@ -38,7 +38,7 @@ fi
 # Build all modules
 echo ""
 echo "Building Maven modules..."
-"$REPO_ROOT/mvnw" -B -q -DskipTests package
+bash "$REPO_ROOT/mvnw" -B -q -DskipTests package
 
 # Find the shaded application JAR
 UBER_JAR=$(ls "$REPO_ROOT/modules/desk-cli/target"/desk-cli-*.jar 2>/dev/null | grep -v original | head -1)

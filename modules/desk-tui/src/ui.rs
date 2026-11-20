@@ -1,12 +1,12 @@
 use crate::app::{App, MenuTab};
 use crate::config::{LineNumberMode, Theme};
-use crate::highlighter::{highlight_lines, style_for_kind, TokenKind};
+use crate::highlighter::{TokenKind, highlight_lines, style_for_kind};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
-    Frame,
 };
 use unicode_width::UnicodeWidthChar;
 

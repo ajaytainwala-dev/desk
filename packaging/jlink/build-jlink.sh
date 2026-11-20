@@ -46,7 +46,7 @@ fi
 # Step 2: Build all modules
 echo ""
 echo "[1/4] Building Maven modules..."
-"$REPO_ROOT/mvnw" -B -q -DskipTests package
+bash "$REPO_ROOT/mvnw" -B -q -DskipTests package
 
 # Step 3: Create output directory structure
 echo ""
