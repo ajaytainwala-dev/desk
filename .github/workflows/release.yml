@@ -214,12 +214,14 @@ jobs:
         shell: pwsh
         run: ./packaging/jlink/build-jlink.ps1 dist/desk-portable
       - name: Zip Windows portable
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p dist
-          rm -f dist/desk-portable-windows.zip
-          (cd dist && zip -r -q desk-portable-windows.zip desk-portable)
-          ls -lh dist/desk-portable-windows.zip
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $zip = "dist/desk-portable-windows.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          # Windows runners do not ship Info-ZIP; use tar's zip writer instead.
+          tar -a -cf $zip -C dist desk-portable
+          Get-Item $zip | Format-List FullName, Length
       - name: Download Windows TUI binary
         uses: actions/download-artifact@v4
         with:

@@ -16,7 +16,15 @@ if [ ! -d "$PORTABLE_DIR" ]; then
   exit 1
 fi
 
+# Resolve absolute paths before cd'ing into the staging dir (relative
+# OUT_ZIP would otherwise be created under /tmp and fail).
+if [[ "$PORTABLE_DIR" != /* ]]; then
+  PORTABLE_DIR="$(cd "$PORTABLE_DIR" && pwd)"
+fi
 mkdir -p "$(dirname "$OUT_ZIP")"
+if [[ "$OUT_ZIP" != /* ]]; then
+  OUT_ZIP="$(cd "$(dirname "$OUT_ZIP")" && pwd)/$(basename "$OUT_ZIP")"
+fi
 rm -f "$OUT_ZIP"
 
 STAGE="$(mktemp -d)"
