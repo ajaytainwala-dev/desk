@@ -138,6 +138,24 @@ jobs:
           path: modules/desk-tui/target/release/desk*
           retention-days: 30
 
+  website:
+    name: Website
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install and build
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+
   package:
     name: Package (jlink portable)
     needs: build

@@ -20,33 +20,26 @@ jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Validate tag format
+      - name: Resolve version
+        id: ver
         run: |
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
-            echo "Manual run or non-tag event; skipping tag validation."
-            exit 0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: tag '$TAG' does not match vMAJOR.MINOR.PATCH"
+              exit 1
+            fi
+            VERSION=${TAG#v}
+          else
+            VERSION=$(grep -m1 '<version>' pom.xml | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' | tr -d ' ' | sed 's/-SNAPSHOT$//')
           fi
-          TAG=${GITHUB_REF#refs/tags/}
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: tag '$TAG' does not match vMAJOR.MINOR.PATCH"
-            exit 1
-          fi
-          echo "Release version: $TAG"
-      - name: Verify version matches tag
-        run: |
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
-            echo "Manual run or non-tag event; skipping version check."
-            exit 0
-          fi
-          TAG=${GITHUB_REF#refs/tags/}
-          POM_VERSION=$(grep -m1 '<version>' pom.xml | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' | tr -d ' ')
-          if [ "$POM_VERSION" != "${TAG#v}"-SNAPSHOT ]; then
-            echo "Warning: pom.xml version ($POM_VERSION) does not match tag ($TAG)."
-            echo "         Expected: ${TAG#v}-SNAPSHOT"
-          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
 
   build-native:
     name: Build native artifacts
@@ -54,7 +47,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            asset: desk-native-linux
+          - os: windows-latest
+            asset: desk-native-windows.exe
+          - os: macos-latest
+            asset: desk-native-macos
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -86,14 +85,16 @@ jobs:
         env:
           GRAALVM_HOME: ${{ env.JAVA_HOME }}
         run: ./packaging/native-image/build-native.ps1 desk
-      - name: Normalize native artifact names
+      - name: Stage stable-named asset
         run: |
           mkdir -p dist/upload
-          for f in dist/native/desk*; do
-            [ -e "$f" ] || continue
-            name=$(basename "$f")
-            cp "$f" "dist/upload/${name}-${{ matrix.os }}"
-          done
+          src=$(ls dist/native/desk* 2>/dev/null | head -1 || true)
+          if [ -z "$src" ]; then
+            echo "No native binary produced" >&2
+            exit 1
+          fi
+          cp "$src" "dist/upload/${{ matrix.asset }}"
+          ls -lh dist/upload/
       - name: Upload native artifact
         uses: actions/upload-artifact@v4
         with:
@@ -102,7 +103,7 @@ jobs:
           retention-days: 90
 
   build-portable:
-    name: Build portable runtime
+    name: Build portable zip (Linux)
     needs: validate
     runs-on: ubuntu-latest
     steps:
@@ -116,11 +117,19 @@ jobs:
           cache: maven
       - name: Build jlink portable distribution
         run: bash packaging/jlink/build-jlink.sh dist/desk-portable
-      - name: Upload portable artifact
+      - name: Zip portable distribution
+        run: |
+          chmod +x packaging/installers/build-portable-zip.sh
+          DESK_ZIP_PLATFORM=linux bash packaging/installers/build-portable-zip.sh \
+            dist/desk-portable \
+            dist/desk-portable-linux.zip
+      - name: Upload portable zips
         uses: actions/upload-artifact@v4
         with:
-          name: desk-portable
-          path: dist/desk-portable/**
+          name: desk-portable-zips
+          path: |
+            dist/desk-portable-linux.zip
+            dist/desk-portable.zip
           retention-days: 90
 
   build-rust:
@@ -129,7 +138,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            asset: desk-tui-linux
+          - os: windows-latest
+            asset: desk-tui-windows.exe
+          - os: macos-latest
+            asset: desk-tui-macos
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -139,17 +154,102 @@ jobs:
       - name: Build Rust editor (release)
         working-directory: modules/desk-tui
         run: cargo build --release
+      - name: Stage stable-named asset
+        shell: bash
+        run: |
+          mkdir -p dist/upload
+          if [ -f modules/desk-tui/target/release/desk.exe ]; then
+            cp modules/desk-tui/target/release/desk.exe "dist/upload/${{ matrix.asset }}"
+          else
+            cp modules/desk-tui/target/release/desk "dist/upload/${{ matrix.asset }}"
+          fi
+          ls -lh dist/upload/
       - name: Upload Rust binary
         uses: actions/upload-artifact@v4
         with:
           name: desk-tui-${{ matrix.os }}
-          path: modules/desk-tui/target/release/desk*
+          path: dist/upload/*
+          retention-days: 90
+
+  build-windows-installer:
+    name: Build Windows GUI + portable zip
+    needs: [validate, build-rust]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '23'
+          cache: maven
+      - name: Build jlink portable (Windows)
+        shell: pwsh
+        run: ./packaging/jlink/build-jlink.ps1 dist/desk-portable
+      - name: Zip Windows portable
+        shell: bash
+        run: |
+          mkdir -p dist
+          rm -f dist/desk-portable-windows.zip
+          (cd dist && zip -r -q desk-portable-windows.zip desk-portable)
+          ls -lh dist/desk-portable-windows.zip
+      - name: Download Windows TUI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: desk-tui-windows-latest
+          path: dist/tui
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+      - name: Build GUI installer
+        shell: pwsh
+        run: |
+          $tui = Get-ChildItem dist/tui -Filter *.exe | Select-Object -First 1
+          ./packaging/installers/build-windows-installer.ps1 `
+            -Version "${{ needs.validate.outputs.version }}" `
+            -PortableDir "dist/desk-portable" `
+            -NativeExe $tui.FullName `
+            -OutDir "dist"
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-windows-installers
+          path: |
+            dist/Desk-Setup-*.exe
+            dist/desk-portable-windows.zip
+          retention-days: 90
+
+  package-cli-setup:
+    name: Package CLI setup scripts
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Stage setup scripts with stable names
+        run: |
+          mkdir -p dist/cli-setup
+          cp packaging/installers/desk-cli-setup.sh dist/cli-setup/desk-cli-setup.sh
+          cp packaging/installers/desk-cli-setup-windows.ps1 dist/cli-setup/desk-cli-setup-windows.ps1
+          chmod +x dist/cli-setup/desk-cli-setup.sh
+      - name: Upload CLI setup scripts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-cli-setup
+          path: dist/cli-setup/*
           retention-days: 90
 
   release:
     name: Create GitHub release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-native, build-portable, build-rust]
+    needs:
+      - validate
+      - build-native
+      - build-portable
+      - build-rust
+      - build-windows-installer
+      - package-cli-setup
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -158,18 +258,49 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist/artifacts
-      - name: Generate checksums
+      - name: Flatten release assets
         run: |
-          cd dist/artifacts
+          mkdir -p dist/release
+          find dist/artifacts -type f -print0 | while IFS= read -r -d '' f; do
+            base=$(basename "$f")
+            # Avoid overwriting identical names from nested dirs
+            dest="dist/release/$base"
+            if [ -e "$dest" ]; then
+              dest="dist/release/$(basename "$(dirname "$f")")-$base"
+            fi
+            cp "$f" "$dest"
+          done
+          cd dist/release
           find . -type f ! -name '*.sha256' -print0 | while IFS= read -r -d '' f; do
             sha256sum "$f" > "${f}.sha256"
           done
+          ls -lah
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          name: Desk ${{ github.ref_name }}
           generate_release_notes: true
-          files: dist/artifacts/**/*
+          body: |
+            ## Downloads
+
+            Website buttons always resolve **this latest release**.
+
+            | Asset | Use |
+            |-------|-----|
+            | `Desk-Setup-*.exe` | Windows GUI installer |
+            | `desk-cli-setup-windows.ps1` | Windows CLI setup |
+            | `desk-cli-setup.sh` | macOS / Linux CLI setup |
+            | `desk-portable-*.zip` | Portable zip (unzip & run) |
+            | `desk-native-*` / `desk-tui-*` | Standalone binaries |
+
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/desk-cli-setup.sh | bash
+            ```
+
+            ```powershell
+            irm https://github.com/${{ github.repository }}/releases/latest/download/desk-cli-setup-windows.ps1 | iex
+            ```
+          files: dist/release/*
           draft: false
           prerelease: false
