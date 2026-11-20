@@ -1,13 +1,157 @@
 {
-  "updatedAt": null,
-  "tag": null,
-  "name": null,
-  "publishedAt": null,
-  "htmlUrl": "https://github.com/ajaytainwala-dev/desk/releases",
-  "assets": [],
+  "updatedAt": "2026-11-20T18:15:36.993Z",
+  "tag": "v0.1.0",
+  "name": "Desk v0.1.0",
+  "publishedAt": "2026-11-20T18:15:20Z",
+  "htmlUrl": "https://github.com/ajaytainwala-dev/desk/releases/tag/v0.1.0",
+  "assets": [
+    {
+      "name": "desk-cli-setup-windows.ps1",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup-windows.ps1",
+      "size": 3542
+    },
+    {
+      "name": "desk-cli-setup-windows.ps1.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup-windows.ps1.sha256",
+      "size": 95
+    },
+    {
+      "name": "desk-cli-setup.sh",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup.sh",
+      "size": 3514
+    },
+    {
+      "name": "desk-cli-setup.sh.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup.sh.sha256",
+      "size": 86
+    },
+    {
+      "name": "desk-portable-linux.zip",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-linux.zip",
+      "size": 40802585
+    },
+    {
+      "name": "desk-portable-linux.zip.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-linux.zip.sha256",
+      "size": 92
+    },
+    {
+      "name": "desk-portable-windows.zip",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-windows.zip",
+      "size": 38753241
+    },
+    {
+      "name": "desk-portable-windows.zip.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-windows.zip.sha256",
+      "size": 94
+    },
+    {
+      "name": "desk-portable.zip",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable.zip",
+      "size": 40802585
+    },
+    {
+      "name": "desk-portable.zip.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable.zip.sha256",
+      "size": 86
+    },
+    {
+      "name": "Desk-Setup-0.1.0.exe",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/Desk-Setup-0.1.0.exe",
+      "size": 35532861
+    },
+    {
+      "name": "Desk-Setup-0.1.0.exe.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/Desk-Setup-0.1.0.exe.sha256",
+      "size": 89
+    },
+    {
+      "name": "desk-tui-linux",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-linux",
+      "size": 1459664
+    },
+    {
+      "name": "desk-tui-linux.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-linux.sha256",
+      "size": 83
+    },
+    {
+      "name": "desk-tui-macos",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-macos",
+      "size": 1251632
+    },
+    {
+      "name": "desk-tui-macos.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-macos.sha256",
+      "size": 83
+    },
+    {
+      "name": "desk-tui-windows.exe",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-windows.exe",
+      "size": 1053696
+    },
+    {
+      "name": "desk-tui-windows.exe.sha256",
+      "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-windows.exe.sha256",
+      "size": 89
+    }
+  ],
   "downloads": {
-    "windows": {},
-    "macos": {},
-    "linux": {}
+    "windows": {
+      "windows-gui": {
+        "name": "Desk-Setup-0.1.0.exe",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/Desk-Setup-0.1.0.exe",
+        "size": 35532861
+      },
+      "windows-cli": {
+        "name": "desk-cli-setup-windows.ps1",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup-windows.ps1",
+        "size": 3542
+      },
+      "portable-zip": {
+        "name": "desk-portable-windows.zip",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-windows.zip",
+        "size": 38753241
+      },
+      "tui": {
+        "name": "desk-tui-windows.exe",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-windows.exe",
+        "size": 1053696
+      }
+    },
+    "macos": {
+      "cli-setup": {
+        "name": "desk-cli-setup.sh",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup.sh",
+        "size": 3514
+      },
+      "portable-zip": {
+        "name": "desk-portable.zip",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable.zip",
+        "size": 40802585
+      },
+      "tui": {
+        "name": "desk-tui-macos",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-macos",
+        "size": 1251632
+      }
+    },
+    "linux": {
+      "cli-setup": {
+        "name": "desk-cli-setup.sh",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup.sh",
+        "size": 3514
+      },
+      "portable-zip": {
+        "name": "desk-portable-linux.zip",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-linux.zip",
+        "size": 40802585
+      },
+      "tui": {
+        "name": "desk-tui-linux",
+        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-linux",
+        "size": 1459664
+      }
+    }
   }
 }
