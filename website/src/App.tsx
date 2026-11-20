@@ -181,7 +181,6 @@ export default function App() {
           <a href="#features">Features</a>
           <a href="#downloads">Downloads</a>
           <a href="#faq">FAQ</a>
-          <a href="#author">Ajay Tainwala</a>
           <a className="nav__cta" href="#downloads">
             Get Desk
           </a>
