@@ -39,8 +39,9 @@ jobs:
       - name: Install and build
         working-directory: website
         env:
-          # Project Pages URL: https://<owner>.github.io/<repo>/
-          BASE_PATH: /${{ github.event.repository.name }}/
+          # Custom domain (desk.ajaytainwala.dev) is served from the site root.
+          # Use "/" — not "/desk/" — or JS/CSS 404 and the page stays blank.
+          BASE_PATH: /
         run: |
           npm ci
           npm run build

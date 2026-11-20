@@ -51,8 +51,8 @@ After a release publishes, **Sync release links** writes resolved asset URLs int
 
 ### GitHub Pages
 
-**Deploy website (GitHub Pages)** builds `website/` with `BASE_PATH=/<repo>/` and deploys via Actions.
+**Deploy website (GitHub Pages)** builds `website/` with `BASE_PATH=/` (custom domain root) and deploys via Actions.
 
 One-time repo setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-Site URL: `https://<owner>.github.io/<repo>/` (for this project: https://ajaytainwala-dev.github.io/desk/).
+Site URL: https://desk.ajaytainwala.dev/ (custom domain). Project Pages fallback: https://ajaytainwala-dev.github.io/desk/.
