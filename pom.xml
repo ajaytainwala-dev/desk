@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Parent project for the cross-platform Java developer toolkit.
-  The project name is intentionally generic (devkit) so it can be renamed
+  Parent POM for the Desk cross-platform Java developer toolkit.
   by changing the <name>, <artifactId>, and version properties in one place.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -9,18 +9,18 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.example.devkit</groupId>
-  <artifactId>devkit</artifactId>
+  <groupId>com.desk</groupId>
+  <artifactId>desk</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
-  <name>DevKit</name>
+  <name>Desk</name>
   <description>
     A lightweight, cross-platform, terminal-native Java developer toolkit.
     Combines a terminal editor, Java source formatter, syntax-highlighting
     engine, source analysis, compilation/execution integration, and a CLI.
   </description>
-  <url>https://example.com/devkit</url>
+  <url>https://example.com/desk</url>
 
   <licenses>
     <license>
@@ -32,21 +32,21 @@
 
   <developers>
     <developer>
-      <name>DevKit Maintainers</name>
-      <organization>DevKit Project</organization>
+      <name>Desk Maintainers</name>
+      <organization>Desk Project</organization>
     </developer>
   </developers>
 
   <scm>
-    <connection>scm:git:https://github.com/example/devkit.git</connection>
-    <developerConnection>scm:git:https://github.com/example/devkit.git</developerConnection>
-    <url>https://github.com/example/devkit</url>
+    <connection>scm:git:https://github.com/ajaytainwala-dev/javaproject.git</connection>
+    <developerConnection>scm:git:https://github.com/ajaytainwala-dev/javaproject.git</developerConnection>
+    <url>https://github.com/ajaytainwala-dev/javaproject</url>
     <tag>HEAD</tag>
   </scm>
 
   <properties>
     <!-- Generic project name. Change here and in module artifactIds to rename. -->
-    <project.name>devkit</project.name>
+    <project.name>desk</project.name>
 
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -107,14 +107,14 @@
   </dependencies>
 
   <modules>
-    <module>modules/devkit-core</module>
-    <module>modules/devkit-cli</module>
-    <module>modules/devkit-lexer</module>
-    <module>modules/devkit-syntax</module>
-    <module>modules/devkit-terminal</module>
-    <module>modules/devkit-editor</module>
-    <module>modules/devkit-formatter</module>
-    <module>modules/devkit-java</module>
+    <module>modules/desk-core</module>
+    <module>modules/desk-cli</module>
+    <module>modules/desk-lexer</module>
+    <module>modules/desk-syntax</module>
+    <module>modules/desk-terminal</module>
+    <module>modules/desk-editor</module>
+    <module>modules/desk-formatter</module>
+    <module>modules/desk-java</module>
   </modules>
 
   <build>

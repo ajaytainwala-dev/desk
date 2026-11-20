@@ -1,0 +1,14 @@
+#![allow(
+    clippy::collapsible_if,
+    clippy::collapsible_match,
+    clippy::explicit_counter_loop,
+    clippy::needless_range_loop
+)]
+
+pub mod app;
+pub mod buffer;
+pub mod config;
+pub mod highlighter;
+pub mod input;
+pub mod mode;
+pub mod ui;

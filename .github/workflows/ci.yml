@@ -33,9 +33,9 @@ jobs:
       - name: Validate project structure
         run: |
           test -f pom.xml
-          test -d modules/devkit-core
-          test -d modules/devkit-cli
-          test -d modules/devkit-editor-rs
+          test -d modules/desk-core
+          test -d modules/desk-cli
+          test -d modules/desk-tui
           echo "Project structure is valid"
 
   build:
@@ -62,7 +62,20 @@ jobs:
       - name: Run unit tests
         run: bash mvnw -B test
       - name: Package
-        run: bash mvnw -B -DskipTests package
+        run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
+      - name: Stage CLI uber JAR for portable packaging
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p staging/cli-jar
+          UBER_JAR=$(ls modules/desk-cli/target/desk-cli-*.jar | grep -v original | head -1)
+          cp "$UBER_JAR" "staging/cli-jar/$(basename "$UBER_JAR")"
+      - name: Upload CLI uber JAR
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-cli-uber-jar
+          path: staging/cli-jar/*
+          retention-days: 7
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -107,22 +120,22 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Check formatting
-        working-directory: modules/devkit-editor-rs
+        working-directory: modules/desk-tui
         run: cargo fmt --all -- --check
       - name: Clippy
-        working-directory: modules/devkit-editor-rs
+        working-directory: modules/desk-tui
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
-        working-directory: modules/devkit-editor-rs
+        working-directory: modules/desk-tui
         run: cargo test
       - name: Build Rust editor (release)
-        working-directory: modules/devkit-editor-rs
+        working-directory: modules/desk-tui
         run: cargo build --release
       - name: Upload Rust binary
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-editor-rs-${{ matrix.os }}
-          path: modules/devkit-editor-rs/target/release/devkit-editor-rs*
+          name: desk-tui-${{ matrix.os }}
+          path: modules/desk-tui/target/release/desk*
           retention-days: 30
 
   package:
@@ -138,13 +151,18 @@ jobs:
           distribution: temurin
           java-version: '23'
           cache: maven
-      - name: Build all modules
-        run: bash mvnw -B -DskipTests package
+      - name: Download packaged CLI JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: desk-cli-uber-jar
+          path: modules/desk-cli/target
       - name: Build jlink portable distribution
-        run: bash packaging/jlink/build-jlink.sh dist/devkit-portable
+        env:
+          DESK_SKIP_MVN: "1"
+        run: bash packaging/jlink/build-jlink.sh dist/desk-portable
       - name: Upload portable distribution
         uses: actions/upload-artifact@v4
         with:
-          name: devkit-portable-${{ github.run_id }}
-          path: dist/devkit-portable/**
+          name: desk-portable-${{ github.run_id }}
+          path: dist/desk-portable/**
           retention-days: 30

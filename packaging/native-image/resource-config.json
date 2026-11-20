@@ -2,7 +2,7 @@
   {
     "resources": [
       {"pattern": "META-INF/services/*"},
-      {"pattern": "devkit/**"}
+      {"pattern": "desk/**"}
     ]
   }
 ]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a GraalVM Native Image for DevKit (Linux/macOS).
+# Build a GraalVM Native Image for Desk (Linux/macOS).
 #
 # Prerequisites:
 #   - GraalVM JDK installed with native-image component
@@ -9,15 +9,15 @@
 #   ./packaging/native-image/build-native.sh [output-name]
 #
 # Output:
-#   dist/native/devkit (Linux/macOS) or dist/native/devkit.exe (Windows)
+#   dist/native/desk (Linux/macOS) or dist/native/desk.exe (Windows)
 
 set -euo pipefail
 
-OUTPUT_NAME="${1:-devkit}"
+OUTPUT_NAME="${1:-desk}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-echo "=== DevKit Native Image Build ==="
+echo "=== Desk Native Image Build ==="
 echo "Repo root: $REPO_ROOT"
 echo "Output name: $OUTPUT_NAME"
 
@@ -38,12 +38,12 @@ fi
 # Build all modules
 echo ""
 echo "Building Maven modules..."
-"$REPO_ROOT/mvnw" -B -q -DskipTests package
+bash "$REPO_ROOT/mvnw" -B -q -DskipTests package
 
 # Find the shaded application JAR
-UBER_JAR=$(ls "$REPO_ROOT/modules/devkit-cli/target"/devkit-cli-*.jar 2>/dev/null | grep -v original | head -1)
+UBER_JAR=$(ls "$REPO_ROOT/modules/desk-cli/target"/desk-cli-*.jar 2>/dev/null | grep -v original | head -1)
 if [ -z "$UBER_JAR" ]; then
-  echo "Error: Application JAR not found in modules/devkit-cli/target" >&2
+  echo "Error: Application JAR not found in modules/desk-cli/target" >&2
   exit 1
 fi
 
@@ -72,7 +72,7 @@ echo "Output: $OUTPUT_EXE"
   -H:ProxyConfigurationFiles="$REPO_ROOT/packaging/native-image/proxy-config.json" \
   -H:+ReportExceptionStackTraces \
   -H:+ReportUnsupportedElementsAtRuntime \
-  devkit.cli.Main
+  desk.cli.Main
 
 if [ ! -f "$OUTPUT_EXE" ]; then
   echo "Error: Native image not produced at $OUTPUT_EXE" >&2

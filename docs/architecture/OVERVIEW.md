@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Project:** devkit (generic placeholder name, designed to be renamed easily)  
+**Project:** desk (generic placeholder name, designed to be renamed easily)  
 **Status:** Milestone 1 — Foundation (working CLI)  
 **Baseline Java:** 23 (project targets Java 25 LTS once available)
 
@@ -19,8 +19,8 @@ A lightweight, cross-platform, terminal-native Java developer toolkit combining:
 
 The application works independently of any IDE and has two modes:
 
-- **Standalone CLI mode** — `devkit fmt`, `devkit check`, `devkit compile`, `devkit run`, `devkit edit`
-- **Interactive TUI mode** — `devkit` (no arguments) launches the terminal editor
+- **Standalone CLI mode** — `desk fmt`, `desk check`, `desk compile`, `desk run`, `desk edit`
+- **Interactive TUI mode** — `desk` (no arguments) launches the terminal editor
 
 ## Guiding principles
 
@@ -33,15 +33,15 @@ The application works independently of any IDE and has two modes:
 ## Repository layout (Milestone 2)
 
 ```
-devkit/
+desk/
 ├── pom.xml                     # Parent POM (version, dependency management)
 ├── mvnw / mvnw.cmd             # Maven Wrapper
 ├── .mvn/                       # Maven Wrapper configuration
 ├── modules/
-│   ├── devkit-core/            # Logging, config, filesystem, document model
-│   ├── devkit-cli/             # CLI entry point, command registry, commands
-│   ├── devkit-lexer/           # Java lexer and token model
-│   └── devkit-syntax/          # Syntax highlighter and themes
+│   ├── desk-core/            # Logging, config, filesystem, document model
+│   ├── desk-cli/             # CLI entry point, command registry, commands
+│   ├── desk-lexer/           # Java lexer and token model
+│   └── desk-syntax/          # Syntax highlighter and themes
 ├── packaging/                  # Native, portable, OS-specific packaging (future)
 ├── docs/architecture/          # Architecture decision documents
 ├── .github/workflows/          # CI/CD pipelines
@@ -53,11 +53,11 @@ devkit/
 ## Module dependency direction
 
 ```
-devkit-syntax  -->  devkit-lexer
-devkit-cli     -->  devkit-core
+desk-syntax  -->  desk-lexer
+desk-cli     -->  desk-core
 ```
 
-`devkit-cli` and `devkit-syntax` both depend on `devkit-core` (directly or transitively). `devkit-core` has no module dependencies (only SLF4J and JUnit for tests). No cycles between modules.
+`desk-cli` and `desk-syntax` both depend on `desk-core` (directly or transitively). `desk-core` has no module dependencies (only SLF4J and JUnit for tests). No cycles between modules.
 
 ## Distribution strategies (future)
 
