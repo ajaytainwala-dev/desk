@@ -4,11 +4,11 @@
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `.github/workflows/ci.yml` | push to main/master, pull requests | Compile, test, static analysis, package |
+| `.github/workflows/ci.yml` | push / pull requests | Compile, test, static analysis, package |
 | `.github/workflows/native-build.yml` | tags, releases | Native Image builds per OS/arch |
-| `.github/workflows/portable-build.yml` | tags, releases | jlink portable runtime packages |
-| `.github/workflows/release.yml` | version tags (`v*`) | Release verification, checksums, publishing |
-| `.github/workflows/sync-release-links.yml` | release published / after Release | Updates `website/public/latest-release.json` download links |
+| `.github/workflows/release.yml` | version tags (`v*`) or manual dispatch | Build installers/binaries and **publish a GitHub Release** with downloadable assets |
+| `.github/workflows/sync-release-links.yml` | release published / after Release | Updates `website/public/latest-release.json` and commits to default branch |
+| `.github/workflows/pages.yml` | push to `main` (`website/**`) or manual | Build marketing site and deploy to **GitHub Pages** |
 
 Build jobs cache Maven dependencies (`setup-java` `cache: maven`) and Rust compile artifacts (`Swatinem/rust-cache`) to cut compile time on repeat runs.
 
@@ -48,3 +48,11 @@ Or: GitHub → Actions → **Release** → Run workflow → enter `0.1.0`.
 ### Website release links
 
 After a release publishes, **Sync release links** writes resolved asset URLs into `website/public/latest-release.json` and commits to the default branch. The marketing site prefers the live GitHub Releases API and falls back to that file when the API is unavailable.
+
+### GitHub Pages
+
+**Deploy website (GitHub Pages)** builds `website/` with `BASE_PATH=/<repo>/` and deploys via Actions.
+
+One-time repo setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+Site URL: `https://<owner>.github.io/<repo>/` (for this project: https://ajaytainwala-dev.github.io/desk/).

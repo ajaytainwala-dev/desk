@@ -2,12 +2,12 @@
 # Downloads the latest release and installs desk onto the user PATH.
 #
 # Usage:
-#   irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup-windows.ps1 | iex
+#   irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex
 #   .\desk-cli-setup-windows.ps1
 [CmdletBinding()]
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Desk\bin"),
-  [string]$Repo = "ajaytainwala-dev/javaproject"
+  [string]$Repo = "ajaytainwala-dev/desk"
 )
 
 $ErrorActionPreference = "Stop"

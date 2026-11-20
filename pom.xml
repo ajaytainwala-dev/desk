@@ -38,9 +38,9 @@
   </developers>
 
   <scm>
-    <connection>scm:git:https://github.com/ajaytainwala-dev/javaproject.git</connection>
-    <developerConnection>scm:git:https://github.com/ajaytainwala-dev/javaproject.git</developerConnection>
-    <url>https://github.com/ajaytainwala-dev/javaproject</url>
+    <connection>scm:git:https://github.com/ajaytainwala-dev/desk.git</connection>
+    <developerConnection>scm:git:https://github.com/ajaytainwala-dev/desk.git</developerConnection>
+    <url>https://github.com/ajaytainwala-dev/desk</url>
     <tag>HEAD</tag>
   </scm>
 
