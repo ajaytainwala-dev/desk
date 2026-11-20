@@ -51,14 +51,19 @@ bash "$REPO_ROOT/mvnw" -B -q -DskipTests package
 # Step 3: Create output directory structure
 echo ""
 echo "[2/4] Creating distribution layout..."
-mkdir -p "$REPO_ROOT/$OUTPUT_DIR"
-DIST_DIR="$(cd "$REPO_ROOT/$OUTPUT_DIR" && pwd)"
+if [[ "$OUTPUT_DIR" = /* ]]; then
+  DIST_DIR="$(mkdir -p "$OUTPUT_DIR" && cd "$OUTPUT_DIR" && pwd)"
+else
+  DIST_DIR="$(mkdir -p "$REPO_ROOT/$OUTPUT_DIR" && cd "$REPO_ROOT/$OUTPUT_DIR" && pwd)"
+fi
 BIN_DIR="$DIST_DIR/bin"
 LIB_DIR="$DIST_DIR/lib"
 RUNTIME_DIR="$DIST_DIR/runtime"
 CONFIG_DIR="$DIST_DIR/config"
 
-mkdir -p "$BIN_DIR" "$LIB_DIR" "$RUNTIME_DIR" "$CONFIG_DIR"
+mkdir -p "$BIN_DIR" "$LIB_DIR" "$CONFIG_DIR"
+# jlink refuses to write into an existing directory (e.g. checked-in dist/desk-portable/runtime).
+rm -rf "$RUNTIME_DIR"
 
 # Step 4: Build jlink runtime
 echo ""
@@ -86,7 +91,6 @@ echo "jlink modules: $MODULE_LIST"
   --compress=2 \
   --no-header-files \
   --no-man-pages \
-  --strip-native-commands \
   --vm=server
 
 RUNTIME_JAVA="$RUNTIME_DIR/bin/java"
