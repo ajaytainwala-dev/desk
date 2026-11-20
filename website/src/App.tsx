@@ -43,67 +43,7 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
   },
 ];
 
-const AUTHOR_PROJECTS: {
-  name: string;
-  blurb: string;
-  href: string;
-  kind: string;
-}[] = [
-  {
-    name: "Desk",
-    blurb: "Java workbench + Rust TUI editor (this project).",
-    href: "https://desk.ajaytainwala.dev/",
-    kind: "Open source",
-  },
-  {
-    name: "AdeshLang",
-    blurb: "Experimental programming language — Rust lexer, parser, AST, interpreter research.",
-    href: ADESHLANG_URL,
-    kind: "Open source",
-  },
-  {
-    name: "Shor India",
-    blurb: "Electronics e-commerce storefront with custom admin for catalog and orders.",
-    href: AUTHOR_URL,
-    kind: "Client",
-  },
-  {
-    name: "Growspace",
-    blurb: "Bengaluru event discovery for concerts, fests, and tech meetups.",
-    href: AUTHOR_URL,
-    kind: "Client",
-  },
-  {
-    name: "Digambaram Astrologer",
-    blurb: "Vedic astrology platform with booking and guidance services.",
-    href: AUTHOR_URL,
-    kind: "Client",
-  },
-  {
-    name: "Gyan Academy",
-    blurb: "Education institute site for commerce and science streams.",
-    href: AUTHOR_URL,
-    kind: "Client",
-  },
-  {
-    name: "Pramaan Print Studio",
-    blurb: "Printing & customization platform with product catalog and admin dashboard.",
-    href: AUTHOR_URL,
-    kind: "Client",
-  },
-  {
-    name: "Gear Cart",
-    blurb: "Automobile spare-parts e-commerce (Next.js, Node, MongoDB).",
-    href: "https://github.com/ajaytainwala-dev/E-commerce-GearCart-",
-    kind: "Open source",
-  },
-  {
-    name: "ScribSnap",
-    blurb: "Notes / todo app — Flutter client with JS backend.",
-    href: "https://github.com/ajaytainwala-dev/ScribSnap-FrontEnd",
-    kind: "Open source",
-  },
-];
+
 
 const PLATFORMS: { id: PlatformId; label: string }[] = [
   { id: "windows", label: "Windows" },
@@ -508,13 +448,13 @@ export default function App() {
           id="author"
           aria-labelledby="author-heading"
         >
-          <p className="section__eyebrow">Creator</p>
+          <p className="section__eyebrow">Author</p>
           <h2 className="section__title" id="author-heading">
             Ajay Tainwala
           </h2>
           <p className="section__lede author__lede">
             Full stack developer and language designer in Bengaluru, India.
-            Creator of Desk and{" "}
+            Author of Desk and{" "}
             <a href={ADESHLANG_URL} rel="noopener noreferrer" target="_blank">
               AdeshLang
             </a>
@@ -525,18 +465,11 @@ export default function App() {
 
           <div className="about__grid">
             <div className="about__block">
-              <h3>About Ajay</h3>
-              <p>
-                Ajay Tainwala ships production websites, e-commerce stores, and
-                admin systems with Next.js, React, Flutter, TypeScript, Firebase,
-                and MongoDB. Alongside client work he builds open-source tooling
-                — Desk for Java developers, and AdeshLang for exploring compilers,
-                interpreters, and memory-safe language design in Rust.
-              </p>
+          
               <p>
                 Based in Bengaluru and open to remote work. Contact:{" "}
-                <a href="mailto:ajaytainwala@outlook.com">
-                  ajaytainwala@outlook.com
+                <a href="mailto:ajay@ajaytainwala.dev">
+                  ajay@ajaytainwala.dev
                 </a>
                 .
               </p>
@@ -607,22 +540,7 @@ export default function App() {
             </a>
             .
           </p>
-          <ul className="project-list">
-            {AUTHOR_PROJECTS.map((p) => (
-              <li key={p.name}>
-                <a
-                  className="project-list__name"
-                  href={p.href}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {p.name}
-                </a>
-                <span className="project-list__kind">{p.kind}</span>
-                <span className="project-list__blurb">{p.blurb}</span>
-              </li>
-            ))}
-          </ul>
+          
         </section>
       </main>
 
