@@ -150,24 +150,8 @@ Section "Desk application" SecApp
   SectionIn RO
   SetOutPath "$INSTDIR"
 
-  ; Embed entire staged tree (portable runtime, exe, docs)
+  ; Embed entire staged tree (portable runtime, exe, bin\desk.cmd, docs)
   File /r "${DESK_INPUT}\*.*"
-
-  CreateDirectory "$INSTDIR\bin"
-  FileOpen $0 "$INSTDIR\bin\desk.cmd" w
-  FileWrite $0 "@echo off$\r$\n"
-  FileWrite $0 "setlocal$\r$\n"
-  FileWrite $0 "if exist `"%~dp0..\desk.exe`" ($\r$\n"
-  FileWrite $0 "  `"%~dp0..\desk.exe`" %*$\r$\n"
-  FileWrite $0 "  exit /b %ERRORLEVEL%$\r$\n"
-  FileWrite $0 ")$\r$\n"
-  FileWrite $0 "if exist `"%~dp0..\portable\bin\desk.cmd`" ($\r$\n"
-  FileWrite $0 "  `"%~dp0..\portable\bin\desk.cmd`" %*$\r$\n"
-  FileWrite $0 "  exit /b %ERRORLEVEL%$\r$\n"
-  FileWrite $0 ")$\r$\n"
-  FileWrite $0 "echo Desk is not installed correctly.$\r$\n"
-  FileWrite $0 "exit /b 1$\r$\n"
-  FileClose $0
 
   ; Remove staging placeholders if present
   Delete "$INSTDIR\.no-exe"

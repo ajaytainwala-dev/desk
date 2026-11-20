@@ -61,6 +61,24 @@ if (-not (Test-Path (Join-Path $inputDir "desk.exe")) -and -not (Test-Path (Join
   throw "Nothing to install: provide -PortableDir and/or -NativeExe"
 }
 
+# Stage launcher script here (NSIS FileWrite cannot embed quoted paths reliably).
+$binDir = Join-Path $inputDir "bin"
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+@"
+@echo off
+setlocal
+if exist "%~dp0..\desk.exe" (
+  "%~dp0..\desk.exe" %*
+  exit /b %ERRORLEVEL%
+)
+if exist "%~dp0..\portable\bin\desk.cmd" (
+  "%~dp0..\portable\bin\desk.cmd" %*
+  exit /b %ERRORLEVEL%
+)
+echo Desk is not installed correctly.
+exit /b 1
+"@ | Set-Content -Encoding ASCII (Join-Path $binDir "desk.cmd")
+
 New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot $OutDir) | Out-Null
 $outFile = Join-Path $RepoRoot "$OutDir\Desk-Setup-$Version.exe"
 
