@@ -74,7 +74,7 @@ jobs:
             native-image --version
           fi
       - name: Build all modules
-        run: bash mvnw -B -DskipTests package
+        run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
       - name: Build native image (Unix)
         if: runner.os != 'Windows'
         env:
@@ -114,8 +114,6 @@ jobs:
           distribution: temurin
           java-version: '23'
           cache: maven
-      - name: Build all modules
-        run: bash mvnw -B -DskipTests package
       - name: Build jlink portable distribution
         run: bash packaging/jlink/build-jlink.sh dist/desk-portable
       - name: Upload portable artifact

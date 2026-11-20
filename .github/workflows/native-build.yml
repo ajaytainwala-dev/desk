@@ -64,7 +64,7 @@ jobs:
             native-image --version
           fi
       - name: Build all modules
-        run: bash mvnw -B -DskipTests package
+        run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
       - name: Build native image (Unix)
         if: runner.os != 'Windows'
         env:

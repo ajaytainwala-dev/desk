@@ -43,10 +43,19 @@ if [ ! -x "$JLINK_EXE" ]; then
   exit 1
 fi
 
-# Step 2: Build all modules
+# Step 2: Build all modules (skip when CI already packaged desk-cli)
 echo ""
-echo "[1/4] Building Maven modules..."
-bash "$REPO_ROOT/mvnw" -B -q -DskipTests package
+if [ "${DESK_SKIP_MVN:-0}" = "1" ]; then
+  echo "[1/4] Skipping Maven build (DESK_SKIP_MVN=1)"
+  UBER_JAR_CHECK=$(ls "$REPO_ROOT/modules/desk-cli/target"/desk-cli-*.jar 2>/dev/null | grep -v original | head -1 || true)
+  if [ -z "$UBER_JAR_CHECK" ]; then
+    echo "Error: DESK_SKIP_MVN=1 but no desk-cli uber JAR in modules/desk-cli/target" >&2
+    exit 1
+  fi
+else
+  echo "[1/4] Building Maven modules..."
+  bash "$REPO_ROOT/.github/scripts/mvnw-retry.sh" -B -q -DskipTests package
+fi
 
 # Step 3: Create output directory structure
 echo ""

@@ -62,7 +62,20 @@ jobs:
       - name: Run unit tests
         run: bash mvnw -B test
       - name: Package
-        run: bash mvnw -B -DskipTests package
+        run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
+      - name: Stage CLI uber JAR for portable packaging
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p staging/cli-jar
+          UBER_JAR=$(ls modules/desk-cli/target/desk-cli-*.jar | grep -v original | head -1)
+          cp "$UBER_JAR" "staging/cli-jar/$(basename "$UBER_JAR")"
+      - name: Upload CLI uber JAR
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-cli-uber-jar
+          path: staging/cli-jar/*
+          retention-days: 7
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -138,9 +151,14 @@ jobs:
           distribution: temurin
           java-version: '23'
           cache: maven
-      - name: Build all modules
-        run: bash mvnw -B -DskipTests package
+      - name: Download packaged CLI JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: desk-cli-uber-jar
+          path: modules/desk-cli/target
       - name: Build jlink portable distribution
+        env:
+          DESK_SKIP_MVN: "1"
         run: bash packaging/jlink/build-jlink.sh dist/desk-portable
       - name: Upload portable distribution
         uses: actions/upload-artifact@v4
