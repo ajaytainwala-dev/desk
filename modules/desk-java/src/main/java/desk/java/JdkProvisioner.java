@@ -193,9 +193,26 @@ public final class JdkProvisioner {
         Files.move(target, backup, StandardCopyOption.ATOMIC_MOVE);
       }
       try {
-        Files.move(jdkHome, target, StandardCopyOption.ATOMIC_MOVE);
-      } catch (IOException atomicFailed) {
-        Files.move(jdkHome, target, StandardCopyOption.REPLACE_EXISTING);
+        try {
+          Files.move(jdkHome, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+          Files.move(jdkHome, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+      } catch (Exception activateFailed) {
+        // Restore previous install if activation fails.
+        if (backup != null && Files.exists(backup) && !Files.exists(target)) {
+          try {
+            Files.move(backup, target, StandardCopyOption.ATOMIC_MOVE);
+          } catch (IOException ignored) {
+            try {
+              Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException ignored2) {
+              // leave backup in place for manual recovery
+            }
+          }
+          backup = null;
+        }
+        throw activateFailed;
       }
       if (backup != null) {
         deleteRecursiveQuiet(backup);
@@ -270,6 +287,7 @@ public final class JdkProvisioner {
   }
 
   private static void untarGz(Path archive, Path dest) throws IOException, InterruptedException {
+    rejectUnsafeTarEntries(archive);
     // Prefer system tar for robust gzip+tar handling across platforms.
     ProcessBuilder pb = new ProcessBuilder(
         "tar", "-xzf", archive.toAbsolutePath().toString(), "-C", dest.toAbsolutePath().toString());
@@ -279,6 +297,37 @@ public final class JdkProvisioner {
     int code = p.waitFor();
     if (code != 0) {
       throw new JavaException("tar extract failed (" + code + "): " + out);
+    }
+    // Post-check: every extracted path must remain under dest.
+    Path destNorm = dest.toAbsolutePath().normalize();
+    try (Stream<Path> walk = Files.walk(destNorm)) {
+      for (Path extracted : (Iterable<Path>) walk::iterator) {
+        if (!extracted.toAbsolutePath().normalize().startsWith(destNorm)) {
+          throw new IOException("Tar slip detected after extract: " + extracted);
+        }
+      }
+    }
+  }
+
+  /** Reject absolute paths and {@code ..} components before invoking tar. */
+  public static void rejectUnsafeTarEntries(Path archive) throws IOException, InterruptedException {
+    ProcessBuilder list = new ProcessBuilder(
+        "tar", "-tzf", archive.toAbsolutePath().toString());
+    list.redirectErrorStream(true);
+    Process p = list.start();
+    String listing = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    int code = p.waitFor();
+    if (code != 0) {
+      throw new JavaException("tar list failed (" + code + "): " + listing);
+    }
+    for (String entry : listing.split("\\R")) {
+      if (entry.isBlank()) {
+        continue;
+      }
+      String name = entry.trim();
+      if (name.startsWith("/") || name.startsWith("\\") || name.contains("..")) {
+        throw new IOException("Tar slip blocked: " + name);
+      }
     }
   }
 

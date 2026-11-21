@@ -69,3 +69,9 @@
 | Managed JDK download | Accurate for Temurin path |
 | DAP stub honesty | Accurate |
 | ReloadConflict partial | Accurate |
+
+---
+
+## Note on parallel explore audit
+
+An independent explore pass ([Audit Phase 4 gaps in code](bc-a8736e88-5c88-5d66-aba8-1a51f1737ba1)) described pre-implementation gaps (ReloadConflict unwired, no DAP transport, no mock LS IT). Those items were closed in Phase 5 commits on this branch; treat that explore table as historical baseline, not current status. Remaining from that pass addressed in follow-up: tar entry pre-check + bak restore on failed JDK activation.
