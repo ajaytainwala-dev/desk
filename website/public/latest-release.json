@@ -125,11 +125,6 @@
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-cli-setup.sh",
         "size": 3514
       },
-      "portable-zip": {
-        "name": "desk-portable.zip",
-        "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable.zip",
-        "size": 40802585
-      },
       "tui": {
         "name": "desk-tui-macos",
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-tui-macos",
