@@ -1,4 +1,4 @@
-# Debug Adapter Protocol — Design (Phase 4)
+# Debug Adapter Protocol — Design & Phase 5 Status
 
 ## Goal
 
@@ -16,33 +16,31 @@ TUI (Rust)  --stdio JSON-RPC-->  desk dap bridge (Java)
                               target JVM (launch / attach)
 ```
 
-- **Transport:** DAP over Content-Length framing (same lessons as LSP).
-- **Discovery:** `DESK_JAVA_DAP` env or known install paths — never hardcoded machine paths.
-- **TUI:** Non-blocking; events polled in `App::tick` like LSP.
-- **CLI:** `desk dap status|launch|…` once the adapter is wired.
+- **Transport:** `DapTransport` — Content-Length framing (implemented).
+- **Session:** `DapSession` — discovery (`DESK_JAVA_DAP`), `initialize` / `initialized` handshake (implemented against mock adapter tests).
+- **Debuggee ops:** launch, breakpoints, step, stack, variables — **throw until E2E validated**.
+- **TUI:** No debug keybindings exposed until ops are real.
 
-## Capabilities (planned)
+## Capabilities
 
 | Capability | Status |
 |------------|--------|
-| Launch config | Designed (`DapSession.LaunchConfig`) |
-| Line breakpoints | Stub — throws until adapter wired |
-| Step over/in/out | Stub |
-| Continue / pause | Stub |
-| Stack / variables | Stub |
-| Debug console | Not started |
+| Content-Length transport | **Implemented + tested** (`DapTransportTest`) |
+| Adapter discover (`DESK_JAVA_DAP`) | **Implemented** |
+| `initialize` handshake | **Implemented + mock-tested** |
+| Launch / breakpoints / step / stack / variables | **Not implemented** (honest UOE) |
+| Debug console / TUI UI | **Not started** |
 
 ## Adapter choice
 
-Prefer Microsoft/RedHat **Java Debug Server** (used by vscode-java) when redistributable, or a JDWP-speaking DAP adapter. Desk must ship discovery only — not bundle proprietary binaries without license review.
+Prefer Microsoft/RedHat **Java Debug Server** when redistributable. Desk discovers via env — never hardcodes machine paths or ships proprietary binaries without license review.
 
 ## Honesty rule
 
-`DapSession` methods throw `UnsupportedOperationException` until end-to-end tested against a real adapter. No debugger buttons that pretend to work.
+No debugger buttons that pretend to work. Transport/session foundation may ship; debuggee control waits for a real adapter E2E fixture.
 
-## Next (Phase 5)
+## Phase 6
 
-1. Spawn adapter process with Content-Length.
-2. `initialize` / `launch` / `setBreakpoints` / `configurationDone`.
-3. TUI breakpoints gutter + stack panel.
-4. Fixture: break in `testdata/fixtures/maven-app`.
+1. Wire Java Debug Server launch + `configurationDone`.
+2. TUI: F9 breakpoint, F5 continue, F10/F11 step (avoid conflicting with existing F5 run / F9 format — remap carefully).
+3. Fixture: break in `testdata/fixtures/maven-app`.

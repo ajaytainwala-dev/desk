@@ -206,6 +206,14 @@ impl Job {
         if let Ok(mut guard) = self.child.lock()
             && let Some(child) = guard.as_mut()
         {
+            #[cfg(unix)]
+            {
+                let pid = child.id() as i32;
+                // Negative PID targets the process group started via setpgid.
+                unsafe {
+                    libc::kill(-pid, libc::SIGTERM);
+                }
+            }
             let _ = child.kill();
         }
     }
@@ -337,6 +345,9 @@ pub struct App {
     pub hover_text: Option<String>,
     pub pending_workspace_edit: Option<crate::workspace_edit::WorkspaceEditPlan>,
     pub pending_code_actions: Vec<crate::lsp::CodeActionEntry>,
+    /// Disk mtime the user already acknowledged (keep memory / suppress re-prompt).
+    pub disk_change_acked: Option<std::time::SystemTime>,
+    pub last_disk_poll: Instant,
 }
 
 impl App {
@@ -459,6 +470,8 @@ impl App {
             hover_text: None,
             pending_workspace_edit: None,
             pending_code_actions: Vec::new(),
+            disk_change_acked: None,
+            last_disk_poll: Instant::now(),
         };
         if initial_path.is_none() {
             app.restore_session_if_present();
@@ -545,6 +558,8 @@ impl App {
         self.pending_key = None;
         self.explorer_focused = false;
         self.terminal_focused = false;
+        self.disk_change_acked = None;
+        self.check_external_file_state();
     }
 
     pub fn next_tab(&mut self) {
@@ -1109,6 +1124,10 @@ impl App {
     pub fn tick(&mut self) {
         self.poll_job();
         self.poll_lsp();
+        if self.last_disk_poll.elapsed() >= Duration::from_secs(2) {
+            self.last_disk_poll = Instant::now();
+            self.check_external_file_state();
+        }
         if !self.config.auto_save || !self.buffer.modified || self.buffer.path.is_none() {
             return;
         }
@@ -1507,12 +1526,19 @@ impl App {
             self.toast("A command is already running — stop it first (F7)", "WARN");
             return Ok(());
         }
-        let mut child = Command::new(program)
-            .args(args)
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .current_dir(&self.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // Own process group so stop_job can signal the whole tree (mvn/gradle children).
+            cmd.process_group(0);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", program, e)))?;
         let stdin = child.stdin.take();
@@ -2533,7 +2559,12 @@ impl App {
             ConfirmAction::ReloadConflict => {
                 if let Some(path) = self.current_file.clone() {
                     let _ = self.open_file_with_options(&path, true);
+                    self.disk_change_acked = None;
                 }
+            }
+            ConfirmAction::DiskDeleted => {
+                self.close_current_file_forced();
+                self.disk_change_acked = None;
             }
             ConfirmAction::SaveOverwriteConflict => {
                 if let Some(path) = self.current_file.clone() {
@@ -2709,7 +2740,77 @@ impl App {
     }
 
     pub fn confirm_no(&mut self) {
+        if let Overlay::Confirm { action, .. } = &self.overlay {
+            match action {
+                ConfirmAction::ReloadConflict | ConfirmAction::DiskDeleted => {
+                    // Keep in-memory; suppress re-prompt until disk changes again.
+                    // Missing file: UNIX_EPOCH sentinel suppresses re-prompt until path returns.
+                    self.disk_change_acked = self
+                        .buffer
+                        .current_disk_mtime()
+                        .or(Some(std::time::SystemTime::UNIX_EPOCH));
+                }
+                _ => {}
+            }
+        }
         self.overlay.close();
+    }
+
+    /// Detect external disk changes / deletions without busy-polling.
+    pub fn check_external_file_state(&mut self) {
+        if matches!(
+            self.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::ReloadConflict | ConfirmAction::DiskDeleted,
+                ..
+            }
+        ) {
+            return;
+        }
+        if !matches!(self.overlay, Overlay::None) {
+            return;
+        }
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if self.buffer.disk_missing() {
+            let ack_missing = self.disk_change_acked == Some(std::time::SystemTime::UNIX_EPOCH);
+            if ack_missing {
+                return;
+            }
+            self.overlay = Overlay::Confirm {
+                title: "File deleted on disk".into(),
+                message: format!(
+                    "{} no longer exists. Close tab (Yes) or keep buffer (No)?",
+                    path.display()
+                ),
+                action: ConfirmAction::DiskDeleted,
+            };
+            return;
+        }
+        if !self.buffer.disk_changed_externally() {
+            return;
+        }
+        let Some(current) = self.buffer.current_disk_mtime() else {
+            return;
+        };
+        if self.disk_change_acked == Some(current) {
+            return;
+        }
+        let dirty = if self.buffer.modified {
+            "unsaved edits"
+        } else {
+            "clean buffer"
+        };
+        self.overlay = Overlay::Confirm {
+            title: "File changed on disk".into(),
+            message: format!(
+                "{} changed externally ({}). Reload from disk (Yes) or keep memory (No)?",
+                path.display(),
+                dirty
+            ),
+            action: ConfirmAction::ReloadConflict,
+        };
     }
 
     pub fn open_palette(&mut self) {
@@ -3327,6 +3428,52 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(&file, "class B {}").unwrap();
         assert!(app.buffer.disk_changed_externally());
+    }
+
+    #[test]
+    fn external_change_prompts_reload_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Ext.java");
+        fs::write(&file, "class A {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&file, "class B {}").unwrap();
+        app.check_external_file_state();
+        assert!(matches!(
+            app.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::ReloadConflict,
+                ..
+            }
+        ));
+        app.confirm_no();
+        assert!(matches!(app.overlay, Overlay::None));
+        // Same external mtime should not re-prompt
+        app.check_external_file_state();
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn deleted_file_prompts_disk_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Gone.java");
+        fs::write(&file, "class G {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        fs::remove_file(&file).unwrap();
+        app.check_external_file_state();
+        assert!(matches!(
+            app.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::DiskDeleted,
+                ..
+            }
+        ));
+        app.confirm_no();
+        assert!(app.buffer.text().contains("class G"));
+        app.check_external_file_state();
+        assert!(matches!(app.overlay, Overlay::None));
     }
 
     #[test]

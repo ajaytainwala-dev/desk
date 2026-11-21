@@ -1,15 +1,15 @@
 # Remaining Limitations
 
-Honest inventory after Phase 4 (real-world readiness increment).
+Honest inventory after Phase 5 (stabilization & validation).
 
-1. **Live JDT LS E2E in CI** — Rename/format/code-action clients are implemented; CI may lack `jdtls`. Set `DESK_JAVA_LS` for full intelligence.
-2. **DAP debugging** — Architecture stub only (`DapSession`); no working debugger until an adapter is wired (`docs/debug/DAP_DESIGN.md`).
-3. **PTY terminal** — Still a job/shell runner, not a full PTY.
-4. **BuildHandle streaming in TUI** — Esc cancels TUI jobs (`desk build` / compile); direct `BuildHandle` live stream UI is next.
-5. **Spring Boot resolve** — Fixture POM exists; full dependency download/run not asserted offline.
+1. **Live JDT LS in CI** — Mock JSON-RPC IT passes; live test is gated (`DESK_JDTLS_IT=1` + `DESK_JAVA_LS`). No pinned jdtls archive in required CI yet.
+2. **DAP debuggee control** — Transport + `initialize` work; launch/breakpoints/step/stack/variables still throw until a real adapter E2E exists. No fake TUI debug UI.
+3. **PTY terminal** — Job/shell runner only; see `docs/terminal/PTY_DECISION.md` (defer library adoption).
+4. **BuildHandle ↔ TUI protocol** — TUI cancels via process-group kill of `desk build` / jobs; dedicated streaming BuildHandle IPC not yet.
+5. **Spring Boot resolve/run E2E** — Fixture POM + detection only.
 6. **`desk test --watch`** — Flag accepted; continuous watch not implemented.
 7. **Split editors** — Deferred.
-8. **Managed JDK vendors** — Temurin download implemented with checksum when available; other vendors still plan-only.
-9. **Numeric performance SLAs** — Micro-benches print timings; large-file/LSP latency numbers need local profiling.
-10. **Error Prone** — Detection/hints only (compiler plugin), not a standalone runner.
-11. **disk_mtime ReloadConflict overlay** — Detection on save works; proactive on-focus reload prompt still partial.
+8. **Managed JDK vendors** — Temurin download path; others plan-only.
+9. **Large-file / LSP latency SLAs** — Micro-benches recorded; 5–10 MiB and jdtls latency not gated.
+10. **Error Prone** — Hints only (compiler plugin).
+11. **Windows process-tree kill** — Unix process groups handled; Windows best-effort via child.kill().

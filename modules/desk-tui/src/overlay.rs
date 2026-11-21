@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 pub enum ConfirmAction {
     CloseTab,
     Quit,
+    /// Disk changed under a clean or dirty buffer — Yes reloads, No keeps memory.
     ReloadConflict,
+    /// File vanished from disk — Yes closes tab, No keeps in-memory buffer.
+    DiskDeleted,
     SaveOverwriteConflict,
     DeletePath,
     ApplyWorkspaceEdit,

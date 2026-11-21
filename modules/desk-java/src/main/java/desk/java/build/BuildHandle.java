@@ -69,16 +69,35 @@ public final class BuildHandle {
     if (!cancelled.compareAndSet(false, true)) {
       return false;
     }
-    process.destroy();
+    destroyProcessTree(process);
     try {
       if (!process.waitFor(3, TimeUnit.SECONDS)) {
-        process.destroyForcibly();
+        destroyProcessTreeForcibly(process);
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      process.destroyForcibly();
+      destroyProcessTreeForcibly(process);
     }
     return true;
+  }
+
+  /** Best-effort: destroy children first, then the parent (avoids orphan Maven/Gradle). */
+  static void destroyProcessTree(Process process) {
+    try {
+      process.toHandle().descendants().forEach(ProcessHandle::destroy);
+    } catch (Exception ignored) {
+      // ignore
+    }
+    process.destroy();
+  }
+
+  static void destroyProcessTreeForcibly(Process process) {
+    try {
+      process.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
+    } catch (Exception ignored) {
+      // ignore
+    }
+    process.destroyForcibly();
   }
 
   public boolean isAlive() {

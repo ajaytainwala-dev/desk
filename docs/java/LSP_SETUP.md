@@ -38,6 +38,16 @@ Incoming `workspace/applyEdit` is acknowledged; application goes through a confi
 | Rename empty | Server capability; cursor on symbol; writable workspace |
 | Crash of LS | Desk keeps running; restart LS / Desk; check LS stderr log |
 
+## Tests
+
+| Suite | When it runs |
+|-------|----------------|
+| `ContentLengthTransportTest` | Always (`./mvnw test`) |
+| `MockLanguageServerIntegrationTest` | Always — in-process mock JSON-RPC (complete/hover/rename/format/shutdown) |
+| `LiveJdtLsIntegrationTest` | Only if `DESK_JDTLS_IT=1` and `DESK_JAVA_LS` set |
+
+Helper: `.github/scripts/fetch-jdtls.sh` (requires `DESK_JDTLS_URL`).
+
 ## Honest limits
 
-Live jdtls E2E against a real Spring Boot classpath is **not** asserted in CI unless the runner provides jdtls + network deps. Unit/client path tests cover framing and WorkspaceEdit apply logic.
+Live jdtls E2E against a real Spring Boot classpath is **not** in required CI. Mock protocol IT + TUI client unit tests cover framing and WorkspaceEdit apply logic.

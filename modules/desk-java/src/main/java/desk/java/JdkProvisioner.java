@@ -20,6 +20,8 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import desk.java.util.ZipSafety;
+
 /**
  * Desk-managed JDK provisioning with explicit consent, checksum verification,
  * safe extraction, and rollback. Never mutates system {@code JAVA_HOME}.
@@ -256,10 +258,7 @@ public final class JdkProvisioner {
     try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
       ZipEntry entry;
       while ((entry = zis.getNextEntry()) != null) {
-        Path out = dest.resolve(entry.getName()).normalize();
-        if (!out.startsWith(dest)) {
-          throw new IOException("Zip slip blocked: " + entry.getName());
-        }
+        Path out = ZipSafety.resolveEntry(dest, entry.getName());
         if (entry.isDirectory()) {
           Files.createDirectories(out);
         } else {

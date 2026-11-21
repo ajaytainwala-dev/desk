@@ -56,4 +56,26 @@ mod benches {
         );
         assert!(!hits.is_empty());
     }
+
+    #[test]
+    fn bench_large_buffer_set_text_sizes() {
+        use crate::buffer::Buffer;
+        for &kib in &[64usize, 256, 1024] {
+            let line = "public class Big { int x; void m() { System.out.println(x); } }\n";
+            let mut s = String::with_capacity(kib * 1024);
+            while s.len() < kib * 1024 {
+                s.push_str(line);
+            }
+            let start = Instant::now();
+            let mut buf = Buffer::new_empty();
+            buf.set_text(&s);
+            let elapsed = start.elapsed();
+            eprintln!(
+                "bench_large_buffer_set_text_{kib}KiB: {:?} lines={}",
+                elapsed,
+                buf.lines.len()
+            );
+            assert!(buf.lines.len() > 10);
+        }
+    }
 }
