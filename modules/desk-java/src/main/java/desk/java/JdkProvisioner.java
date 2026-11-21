@@ -163,6 +163,12 @@ public final class JdkProvisioner {
           .build();
 
       String expectedSha = fetchChecksum(client, plan.checksumUrl());
+      if (expectedSha == null || expectedSha.isBlank()) {
+        throw new JavaException(
+            "Refusing managed JDK download without a SHA-256 checksum from "
+                + plan.checksumUrl()
+                + ". Install a JDK manually or retry when Adoptium metadata is reachable.");
+      }
       downloadFile(client, plan.downloadUrl(), archive, expectedSha);
 
       if (plan.archiveFileName().endsWith(".zip")) {
@@ -241,14 +247,17 @@ public final class JdkProvisioner {
           return first.toLowerCase(Locale.ROOT);
         }
       }
-    } catch (Exception ignored) {
-      // checksum optional if API shape differs — download still proceeds with logged warning
+    } catch (Exception e) {
+      throw new JavaException("Failed to fetch JDK checksum from " + checksumUrl + ": " + e.getMessage(), e);
     }
     return null;
   }
 
   private static void downloadFile(HttpClient client, String url, Path dest, String expectedSha)
       throws Exception {
+    if (expectedSha == null || expectedSha.isBlank()) {
+      throw new JavaException("Internal error: downloadFile requires SHA-256");
+    }
     HttpRequest req = HttpRequest.newBuilder(URI.create(url))
         .timeout(Duration.ofMinutes(10))
         .header("User-Agent", "desk-jdk-provisioner/0.1")
@@ -262,12 +271,10 @@ public final class JdkProvisioner {
     try (InputStream in = new DigestInputStream(resp.body(), digest)) {
       Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
     }
-    if (expectedSha != null) {
-      String actual = toHex(digest.digest());
-      if (!expectedSha.equalsIgnoreCase(actual)) {
-        Files.deleteIfExists(dest);
-        throw new JavaException("SHA-256 mismatch: expected " + expectedSha + " got " + actual);
-      }
+    String actual = toHex(digest.digest());
+    if (!expectedSha.equalsIgnoreCase(actual)) {
+      Files.deleteIfExists(dest);
+      throw new JavaException("SHA-256 mismatch: expected " + expectedSha + " got " + actual);
     }
   }
 

@@ -106,6 +106,42 @@ pub fn uri_to_path(uri: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(uri.trim_start_matches("file://")))
 }
 
+/// True when {@code path} resolves under {@code workspace_root} (after canonicalize when possible).
+pub fn path_is_inside_workspace(workspace_root: &Path, path: &Path) -> bool {
+    let root = fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let candidate = fs::canonicalize(path).unwrap_or_else(|_| {
+        // File may not exist yet — resolve parent + name.
+        if let Some(parent) = path.parent() {
+            let canon_parent = fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+            canon_parent.join(path.file_name().unwrap_or_default())
+        } else {
+            path.to_path_buf()
+        }
+    });
+    candidate.starts_with(&root)
+}
+
+/// Drop any file edits that escape the workspace. Returns (filtered plan, rejected paths).
+pub fn filter_plan_to_workspace(
+    workspace_root: &Path,
+    plan: WorkspaceEditPlan,
+) -> (WorkspaceEditPlan, Vec<PathBuf>) {
+    let mut rejected = Vec::new();
+    let files: Vec<FileEdits> = plan
+        .files
+        .into_iter()
+        .filter(|f| {
+            if path_is_inside_workspace(workspace_root, &f.path) {
+                true
+            } else {
+                rejected.push(f.path.clone());
+                false
+            }
+        })
+        .collect();
+    (WorkspaceEditPlan { files }, rejected)
+}
+
 /// Apply edits to an in-memory line buffer (0-based LSP positions).
 pub fn apply_edits_to_lines(lines: &mut Vec<String>, edits: &[TextEdit]) {
     for edit in edits {
@@ -202,6 +238,29 @@ mod tests {
         sorted.sort_by_key(|a| std::cmp::Reverse((a.start_line, a.start_col)));
         apply_edits_to_lines(&mut lines, &sorted);
         assert_eq!(lines, vec!["AAA".to_string(), "bbb".into(), "CCC".into()]);
+    }
+
+    #[test]
+    fn filters_paths_outside_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let inside = dir.path().join("A.java");
+        let outside = PathBuf::from("/tmp/desk-outside-should-reject.java");
+        std::fs::write(&inside, "class A {}").unwrap();
+        let plan = WorkspaceEditPlan {
+            files: vec![
+                FileEdits {
+                    path: inside.clone(),
+                    edits: vec![],
+                },
+                FileEdits {
+                    path: outside.clone(),
+                    edits: vec![],
+                },
+            ],
+        };
+        let (filtered, rejected) = filter_plan_to_workspace(dir.path(), plan);
+        assert_eq!(filtered.files.len(), 1);
+        assert_eq!(rejected, vec![outside]);
     }
 
     #[test]

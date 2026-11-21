@@ -2593,8 +2593,21 @@ impl App {
     }
 
     pub fn apply_workspace_edit_plan(&mut self, plan: crate::workspace_edit::WorkspaceEditPlan) {
-        use crate::workspace_edit::{apply_edits_to_lines, apply_file_on_disk};
+        use crate::workspace_edit::{
+            apply_edits_to_lines, apply_file_on_disk, filter_plan_to_workspace,
+        };
         self.sync_active_tab();
+        let (plan, rejected) = filter_plan_to_workspace(&self.cwd, plan);
+        if !rejected.is_empty() {
+            self.toast(
+                &format!("Rejected {} path(s) outside workspace", rejected.len()),
+                "WARN",
+            );
+        }
+        if plan.is_empty() {
+            self.toast("No in-workspace edits to apply", "WARN");
+            return;
+        }
         for file in &plan.files {
             let open_idx = self.tabs.iter().position(|t| {
                 t.path.as_ref().is_some_and(|p| {
@@ -2625,17 +2638,36 @@ impl App {
         kind: &str,
         plan: crate::workspace_edit::WorkspaceEditPlan,
     ) {
+        use crate::workspace_edit::filter_plan_to_workspace;
+        let (plan, rejected) = filter_plan_to_workspace(&self.cwd, plan);
+        if !rejected.is_empty() {
+            self.toast(
+                &format!(
+                    "Ignoring {} edit target(s) outside workspace",
+                    rejected.len()
+                ),
+                "WARN",
+            );
+        }
         if plan.is_empty() {
-            self.toast(&format!("No edits from {}", kind), "INFO");
+            self.toast(&format!("No in-workspace edits from {}", kind), "INFO");
             return;
         }
         self.pending_workspace_edit = Some(plan.clone());
+        let paths: Vec<String> = plan
+            .files
+            .iter()
+            .take(5)
+            .map(|f| f.path.display().to_string())
+            .collect();
+        let more = if plan.files.len() > 5 {
+            format!(" (+{} more)", plan.files.len() - 5)
+        } else {
+            String::new()
+        };
         self.overlay = Overlay::Confirm {
             title: format!("Apply {} edits?", kind),
-            message: format!(
-                "{} — confirm to apply across open/disk files",
-                plan.summary()
-            ),
+            message: format!("{} — {}\n{}", plan.summary(), paths.join(", "), more),
             action: ConfirmAction::ApplyWorkspaceEdit,
         };
     }
