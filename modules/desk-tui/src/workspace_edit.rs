@@ -199,7 +199,7 @@ mod tests {
         ];
         // Already sorted bottom-up by parse; apply in given order (caller sorts)
         let mut sorted = edits;
-        sorted.sort_by(|a, b| (b.start_line, b.start_col).cmp(&(a.start_line, a.start_col)));
+        sorted.sort_by_key(|a| std::cmp::Reverse((a.start_line, a.start_col)));
         apply_edits_to_lines(&mut lines, &sorted);
         assert_eq!(lines, vec!["AAA".to_string(), "bbb".into(), "CCC".into()]);
     }
