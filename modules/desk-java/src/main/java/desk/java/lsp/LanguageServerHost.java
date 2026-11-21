@@ -1,40 +1,63 @@
 package desk.java.lsp;
 
+import desk.java.JavaException;
+
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Chooses a language client implementation. Prefers an external JDT LS when
- * configured via {@code DESK_JAVA_LS}, otherwise falls back to javac diagnostics.
+ * Chooses and manages a language client. Prefers an external JDT LS when
+ * discoverable ({@code DESK_JAVA_LS} or PATH); otherwise falls back to
+ * javac diagnostics (diagnostics-only — completion/navigation throw).
  */
 public final class LanguageServerHost {
 
-  private LanguageClient client;
+  private final AtomicReference<LanguageClient> client = new AtomicReference<>();
+  private volatile Path workspaceRoot;
 
   public synchronized LanguageClient ensureStarted(Path workspaceRoot) throws Exception {
     Objects.requireNonNull(workspaceRoot, "workspaceRoot");
-    if (client != null && client.isRunning()) {
-      return client;
+    this.workspaceRoot = workspaceRoot;
+    LanguageClient existing = client.get();
+    if (existing != null && existing.isRunning()) {
+      return existing;
     }
-    String external = System.getenv("DESK_JAVA_LS");
-    if (external != null && !external.isBlank()) {
-      client = new ExternalProcessLanguageClient(Path.of(external.trim()));
-    } else {
-      client = new JavacLanguageClient();
+    Optional<Path> server = LanguageServerLauncher.discover();
+    String forced = System.getenv("DESK_JAVA_LS");
+    if (forced != null && !forced.isBlank() && server.isEmpty()) {
+      throw new JavaException("DESK_JAVA_LS set but not executable: " + forced);
     }
-    client.start(workspaceRoot);
-    return client;
+    if (server.isPresent()) {
+      var launched = LanguageServerLauncher.start(workspaceRoot, server.get());
+      LanguageClient lsp = new LspLanguageClient(launched);
+      lsp.start(workspaceRoot);
+      client.set(lsp);
+      return lsp;
+    }
+    JavacLanguageClient fallback = new JavacLanguageClient();
+    fallback.start(workspaceRoot);
+    client.set(fallback);
+    return fallback;
   }
 
   public synchronized Optional<LanguageClient> current() {
-    return Optional.ofNullable(client);
+    return Optional.ofNullable(client.get());
+  }
+
+  public Optional<Path> workspaceRoot() {
+    return Optional.ofNullable(workspaceRoot);
   }
 
   public synchronized void shutdown() {
-    if (client != null) {
-      client.stop();
-      client = null;
+    LanguageClient c = client.getAndSet(null);
+    if (c != null) {
+      c.stop();
     }
+  }
+
+  public boolean usingExternalServer() {
+    return client.get() instanceof LspLanguageClient;
   }
 }

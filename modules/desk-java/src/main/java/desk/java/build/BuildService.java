@@ -4,17 +4,16 @@ import desk.java.JdkDiscovery;
 import desk.java.JdkInstallation;
 import desk.java.JdkSelector;
 import desk.java.JavaException;
+import desk.java.ProcessIo;
 import desk.java.project.ProjectDescriptor;
 import desk.java.project.ProjectDetector;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -151,37 +150,23 @@ public final class BuildService {
 
   private static BuildResult run(List<String> command, Path cwd, Path jdkHome,
       BuildSystem system, long start) {
-    try {
-      ProcessBuilder pb = new ProcessBuilder(command);
-      pb.directory(cwd.toFile());
-      pb.redirectErrorStream(true);
-      if (jdkHome != null) {
-        pb.environment().put("JAVA_HOME", jdkHome.toAbsolutePath().toString());
-        String path = pb.environment().getOrDefault("PATH", "");
-        pb.environment().put("PATH",
-            jdkHome.resolve("bin") + (isWindows() ? ";" : ":") + path);
-      }
-      Process process = pb.start();
-      StringBuilder out = new StringBuilder();
-      try (BufferedReader reader = new BufferedReader(
-          new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-          out.append(line).append('\n');
-        }
-      }
-      boolean finished = process.waitFor(30, TimeUnit.MINUTES);
-      int code = finished ? process.exitValue() : 124;
-      if (!finished) {
-        process.destroyForcibly();
-        out.append("\nerror: build timed out\n");
-      }
-      List<BuildDiagnostic> diagnostics = parseDiagnostics(out.toString(), cwd, system);
-      return new BuildResult(code == 0, code, system, out.toString(), diagnostics,
-          System.currentTimeMillis() - start);
-    } catch (Exception e) {
-      throw new JavaException("Build failed to start: " + e.getMessage(), e);
+    Map<String, String> env = new java.util.LinkedHashMap<>();
+    if (jdkHome != null) {
+      env.put("JAVA_HOME", jdkHome.toAbsolutePath().toString());
+      String path = System.getenv().getOrDefault("PATH", "");
+      env.put("PATH", jdkHome.resolve("bin") + (isWindows() ? ";" : ":") + path);
     }
+    ProcessIo.Result proc = ProcessIo.run(command, cwd, env, 30, TimeUnit.MINUTES);
+    String combined = proc.stdout();
+    if (proc.stderr() != null && !proc.stderr().isBlank()) {
+      combined = combined + proc.stderr();
+    }
+    if (proc.timedOut()) {
+      combined = combined + "\nerror: build timed out\n";
+    }
+    List<BuildDiagnostic> diagnostics = parseDiagnostics(combined, cwd, system);
+    return new BuildResult(proc.exitCode() == 0 && !proc.timedOut(), proc.exitCode(),
+        system, combined, diagnostics, System.currentTimeMillis() - start);
   }
 
   static List<BuildDiagnostic> parseDiagnostics(String output, Path root, BuildSystem system) {
@@ -217,9 +202,10 @@ public final class BuildService {
     Path scan = Files.isDirectory(main) ? main : root;
     try (var stream = Files.walk(scan, Files.isDirectory(main) ? 20 : 4)) {
       stream.filter(p -> p.getFileName() != null && p.getFileName().toString().endsWith(".java"))
-          .filter(p -> !p.toString().contains("/desk-out/"))
-          .filter(p -> !p.toString().contains("/target/"))
-          .filter(p -> !p.toString().contains("/.desk/"))
+          .filter(p -> {
+            String s = p.toString().replace('\\', '/');
+            return !s.contains("/desk-out/") && !s.contains("/target/") && !s.contains("/.desk/");
+          })
           .forEach(sources::add);
     } catch (Exception ignored) {
       // ignore

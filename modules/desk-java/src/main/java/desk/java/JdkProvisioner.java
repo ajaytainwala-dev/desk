@@ -84,6 +84,13 @@ public final class JdkProvisioner {
       throw new JavaException("Unsupported Java feature version: " + request.featureVersion());
     }
     Vendor vendor = request.vendor() != null ? request.vendor() : Vendor.TEMURIN;
+    if (vendor != Vendor.TEMURIN) {
+      throw new JavaException(
+          "Managed download currently supports only Temurin (Adoptium). "
+              + "Requested vendor '" + vendor.id()
+              + "' is not supported yet. Install manually, then run 'desk java use "
+              + request.featureVersion() + "'.");
+    }
     String os = osToken();
     String arch = archToken();
     String fileName = "OpenJDK" + request.featureVersion() + "_" + os + "_" + arch + "_hotspot.tar.gz";
@@ -94,13 +101,8 @@ public final class JdkProvisioner {
         .resolve(vendor.id() + "-" + request.featureVersion());
 
     String downloadUrl = adoptiumLatestUrl(request.featureVersion(), os, arch);
-    String checksumUrl = downloadUrl + ".sha256.txt";
-    String license = switch (vendor) {
-      case TEMURIN -> "Eclipse Temurin builds are under GPLv2 with Classpath Exception. Review Adoptium terms.";
-      case CORRETTO -> "Amazon Corretto is OpenJDK under GPLv2 with Classpath Exception. Review Amazon terms.";
-      case ZULU -> "Azul Zulu builds are OpenJDK-based; review Azul terms of use.";
-      case LIBERICA -> "BellSoft Liberica is OpenJDK-based; review BellSoft terms.";
-    };
+    String checksumUrl = downloadUrl; // Adoptium binary URL; checksum via API separately when download lands
+    String license = "Eclipse Temurin builds are under GPLv2 with Classpath Exception. Review Adoptium terms.";
 
     return new InstallPlan(
         request.featureVersion(),
@@ -112,25 +114,36 @@ public final class JdkProvisioner {
         license);
   }
 
+  public enum InstallStatus {
+    PLANNED,
+    NOT_IMPLEMENTED,
+    REQUIRES_CONSENT
+  }
+
+  public record InstallResult(InstallStatus status, InstallPlan plan, String message) {
+  }
+
   /**
-   * Executes provisioning. Requires {@code consent=true}. When {@code dryRun=true},
-   * only returns the plan without network I/O.
+   * Plans or (when implemented) executes provisioning. Requires {@code consent=true}
+   * for any download. Never downloads silently. Current build returns
+   * {@link InstallStatus#NOT_IMPLEMENTED} after consent — install manually / SDKMAN.
    */
-  public static InstallPlan install(InstallRequest request) {
+  public static InstallResult install(InstallRequest request) {
     InstallPlan planned = plan(request);
     if (request.dryRun()) {
-      return planned;
+      return new InstallResult(InstallStatus.PLANNED, planned,
+          "Dry run only — nothing downloaded.");
     }
     if (!request.consent()) {
-      throw new JavaException(
-          "JDK download requires explicit consent. Re-run with --yes after reviewing the license note:\n"
+      return new InstallResult(InstallStatus.REQUIRES_CONSENT, planned,
+          "JDK download requires explicit consent. Re-run with --yes after reviewing:\n"
               + planned.licenseNote());
     }
-    throw new JavaException(
-        "Managed JDK download is planned but not auto-executed in this environment build. "
+    return new InstallResult(InstallStatus.NOT_IMPLEMENTED, planned,
+        "Managed JDK download is not implemented yet (consent recorded, nothing downloaded).\n"
             + "Plan target: " + planned.targetDir() + "\n"
             + "URL: " + planned.downloadUrl() + "\n"
-            + "Install manually or use SDKMAN, then run 'desk java use "
+            + "Install Temurin manually or via SDKMAN, then run 'desk java use "
             + planned.featureVersion() + "'.\n"
             + planned.licenseNote());
   }

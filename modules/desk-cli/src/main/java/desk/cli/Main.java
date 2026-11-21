@@ -37,13 +37,16 @@ public final class Main {
     registry.register(new NewCommand());
     registry.register(new WorkspaceCommand());
     registry.register(new JavaCommand());
+    registry.register(new LspCommand());
     registry.register(new FmtCommand());
     registry.register(new CheckCommand());
     registry.register(new CompileCommand());
     registry.register(new BuildCommand());
+    registry.register(new CleanCommand());
     registry.register(new TestCommand());
     registry.register(new RunCommand());
     registry.register(new GitCommand());
+    registry.register(new DoctorCommand());
   }
 
   static int run(CommandRegistry registry, String[] args) {

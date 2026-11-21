@@ -1,6 +1,6 @@
 use crate::app::{App, MenuTab};
 use crate::config::{LineNumberMode, Theme};
-use crate::highlighter::{TokenKind, highlight_lines, style_for_kind};
+use crate::highlighter::{TokenKind, style_for_kind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -212,7 +212,12 @@ fn render_menu_dropdown(f: &mut Frame, app: &mut App, menu_area: Rect, theme: &T
 
 fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     app.tab_close_positions.clear();
-    app.sync_active_tab();
+    // Keep dirty flag for the active tab without cloning the whole buffer each frame.
+    if let Some(tab) = app.tabs.get_mut(app.active_tab) {
+        tab.buffer.modified = app.buffer.modified;
+        tab.path = app.current_file.clone();
+        tab.language = app.language;
+    }
     if app.tabs.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
@@ -418,7 +423,22 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     let scroll_top = buffer.scroll_top;
     let scroll_left = buffer.scroll_left;
 
-    let tokens_all = highlight_lines(&buffer.lines, app.language);
+    // Viewport-based highlighting: advance block-comment state through
+    // off-screen lines, then tokenize only visible rows.
+    let visible_end = line_count.min(scroll_top + inner.height as usize + 1);
+    let mut comment_state = false;
+    for line in buffer.lines.iter().take(scroll_top) {
+        let _ =
+            crate::highlighter::highlight_line_with_state(line, app.language, &mut comment_state);
+    }
+    let mut tokens_viewport: Vec<Vec<crate::highlighter::HighlightedToken>> = Vec::new();
+    for line in buffer.lines.iter().take(visible_end).skip(scroll_top) {
+        tokens_viewport.push(crate::highlighter::highlight_line_with_state(
+            line,
+            app.language,
+            &mut comment_state,
+        ));
+    }
     let selection = buffer.selection;
     let bracket = app.bracket_match;
     let wrap = app.config.word_wrap;
@@ -427,19 +447,13 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     let mut visual_rows: Vec<(Option<usize>, Line<'static>, Style)> = Vec::new();
     let mut cursor_visual_row = 0usize;
 
-    for line_idx in scroll_top..line_count.min(scroll_top + inner.height as usize + 1) {
+    for line_idx in scroll_top..visible_end {
         let line_text = &buffer.lines[line_idx];
-        let cells = build_cells(
-            line_text,
-            tokens_all
-                .get(line_idx)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]),
-            theme,
-            selection,
-            line_idx,
-            bracket,
-        );
+        let tokens = tokens_viewport
+            .get(line_idx - scroll_top)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let cells = build_cells(line_text, tokens, theme, selection, line_idx, bracket);
         let chunks: Vec<&[Cell]> = if wrap {
             cells.chunks(content_width.max(1)).collect()
         } else {

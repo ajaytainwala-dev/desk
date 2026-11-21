@@ -3,7 +3,10 @@ package desk.cli;
 import desk.core.filesystem.FileSystem;
 import desk.core.logging.Logger;
 import desk.core.logging.LoggerFactory;
+import desk.core.workspace.Workspace;
+import desk.core.workspace.WorkspaceStore;
 import desk.java.CompileResult;
+import desk.java.JdkSelector;
 import desk.java.JavaSourceCompiler;
 
 import java.io.IOException;
@@ -69,7 +72,10 @@ public final class CheckCommand implements Command {
     try {
       Path tempDir = Files.createTempDirectory("desk-check-");
       try {
-        CompileResult result = JavaSourceCompiler.compile(sourceFile, tempDir, new ArrayList<>());
+        Path workspace = WorkspaceStore.current().map(Workspace::root)
+            .orElseGet(() -> sourceFile.toAbsolutePath().getParent());
+        Path jdk = JdkSelector.current(workspace).map(j -> j.home()).orElse(null);
+        CompileResult result = JavaSourceCompiler.compile(sourceFile, tempDir, new ArrayList<>(), jdk);
         if (result.success()) {
           System.out.println("ok: no errors in " + sourceFile);
           return CommandResult.success();

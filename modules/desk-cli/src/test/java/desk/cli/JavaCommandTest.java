@@ -30,6 +30,15 @@ class JavaCommandTest {
   }
 
   @Test
+  @DisplayName("java install --yes reports not implemented without downloading")
+  void installYesNotImplemented() {
+    CommandResult result = new JavaCommand().execute(
+        new String[]{"install", "25", "--yes"});
+    assertFalse(result.isSuccess());
+    assertEquals("NOT_IMPLEMENTED", result.message());
+  }
+
+  @Test
   @DisplayName("java policy prints matrix")
   void policy() {
     assertTrue(new JavaCommand().execute(new String[]{"policy"}).isSuccess());

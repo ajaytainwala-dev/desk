@@ -365,7 +365,7 @@ impl App {
             language,
         };
 
-        Self {
+        let mut app = Self {
             buffer,
             config,
             mode: Mode::Normal,
@@ -432,6 +432,49 @@ impl App {
             next_job_id: 1,
             bracket_match: None,
             pending_key: None,
+        };
+        if initial_path.is_none() {
+            app.restore_session_if_present();
+        }
+        app
+    }
+
+    /// Restore open tabs from {@code .desk/session.json} when present.
+    pub fn restore_session_if_present(&mut self) {
+        let session = self.cwd.join(".desk").join("session.json");
+        let Ok(text) = fs::read_to_string(&session) else {
+            return;
+        };
+        let mut restored = 0usize;
+        // Minimal parse of openDocuments[].path without a JSON crate.
+        for segment in text.split("\"path\"") {
+            let Some(rest) = segment.strip_prefix(':') else {
+                continue;
+            };
+            let rest = rest.trim_start();
+            let Some(rest) = rest.strip_prefix('"') else {
+                continue;
+            };
+            let Some(end) = rest.find('"') else {
+                continue;
+            };
+            let path = PathBuf::from(&rest[..end]);
+            if path.is_file() {
+                if let Err(e) = self.open_file(&path) {
+                    self.toast(
+                        &format!("Session restore skipped {}: {}", path.display(), e),
+                        "WARN",
+                    );
+                } else {
+                    restored += 1;
+                }
+            }
+        }
+        if restored > 0 {
+            self.toast(
+                &format!("Restored {} tab(s) from session", restored),
+                "INFO",
+            );
         }
     }
 
@@ -653,12 +696,34 @@ impl App {
     }
 
     pub fn open_file(&mut self, path: &Path) -> Result<(), std::io::Error> {
-        let canonical = path.to_path_buf();
+        self.open_file_with_options(path, false)
+    }
+
+    /// Open a file. When {@code force_reload} is false and the path is already
+    /// open, switch to that tab without discarding unsaved edits.
+    pub fn open_file_with_options(
+        &mut self,
+        path: &Path,
+        force_reload: bool,
+    ) -> Result<(), std::io::Error> {
+        let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         let existing = self.tabs.iter().position(|t| {
-            t.path
-                .as_ref()
-                .is_some_and(|p| p == &canonical || p.as_path() == path)
+            t.path.as_ref().is_some_and(|p| {
+                fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical || p == &canonical
+            })
         });
+
+        if let Some(idx) = existing {
+            if !force_reload {
+                self.activate_tab(idx);
+                self.toast(&format!("Switched to {}", path.display()), "INFO");
+                return Ok(());
+            }
+            if self.tabs[idx].buffer.modified || (idx == self.active_tab && self.buffer.modified) {
+                self.toast("Unsaved changes — save before reloading", "WARN");
+                return Ok(());
+            }
+        }
 
         let mut buffer = Buffer::from_file(path)?;
         Self::apply_config(&self.config, &mut buffer);
@@ -670,8 +735,6 @@ impl App {
         let language = Language::from_path(Some(path));
 
         if let Some(idx) = existing {
-            // Reload from disk into the existing tab. Do not sync_active_tab first —
-            // that would overwrite the on-disk content with unsaved buffer edits.
             self.tabs[idx] = EditorTab {
                 path: Some(canonical.clone()),
                 buffer: buffer.clone(),
@@ -2062,7 +2125,31 @@ impl App {
                 self.running = false;
             }
             "e" | "edit" => {
-                if let Err(e) = self.open_file(Path::new(rest)) {
+                if let Err(e) = self.open_file_with_options(Path::new(rest), true) {
+                    self.toast(&format!("Open failed: {}", e), "ERROR");
+                }
+            }
+            "e!" => {
+                // Force reload, discarding unsaved edits for the target path.
+                let path = Path::new(rest);
+                let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                if let Some(idx) = self.tabs.iter().position(|t| {
+                    t.path.as_ref().is_some_and(|p| {
+                        fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical
+                    })
+                }) {
+                    self.tabs[idx].buffer.modified = false;
+                    if idx == self.active_tab {
+                        self.buffer.modified = false;
+                    }
+                } else if self
+                    .current_file
+                    .as_ref()
+                    .is_some_and(|p| fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical)
+                {
+                    self.buffer.modified = false;
+                }
+                if let Err(e) = self.open_file_with_options(path, true) {
                     self.toast(&format!("Open failed: {}", e), "ERROR");
                 }
             }
@@ -2275,9 +2362,33 @@ mod tests {
         assert!(!app.buffer.modified);
 
         app.buffer.set_text("changed");
+        assert!(app.buffer.modified);
+        // :e refuses to discard unsaved edits
         app.command_line = format!(":e {}", file.display());
         app.execute_command_line();
+        assert_eq!(app.buffer.text(), "changed");
+        // :e! reloads from disk
+        app.command_line = format!(":e! {}", file.display());
+        app.execute_command_line();
         assert_eq!(app.buffer.text(), "class Demo {}");
+    }
+
+    #[test]
+    fn switching_tabs_preserves_unsaved_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("A.java");
+        let b = dir.path().join("B.java");
+        fs::write(&a, "class A {}").unwrap();
+        fs::write(&b, "class B {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&a).unwrap();
+        app.buffer.set_text("class A { int x; }");
+        assert!(app.buffer.modified);
+        app.open_file(&b).unwrap();
+        assert_eq!(app.buffer.text().trim(), "class B {}");
+        app.prev_tab();
+        assert!(app.buffer.text().contains("int x"));
+        assert!(app.buffer.modified);
     }
 
     #[test]

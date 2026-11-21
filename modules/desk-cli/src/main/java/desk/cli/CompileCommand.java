@@ -3,7 +3,10 @@ package desk.cli;
 import desk.core.filesystem.FileSystem;
 import desk.core.logging.Logger;
 import desk.core.logging.LoggerFactory;
+import desk.core.workspace.Workspace;
+import desk.core.workspace.WorkspaceStore;
 import desk.java.CompileResult;
+import desk.java.JdkSelector;
 import desk.java.JavaSourceCompiler;
 
 import java.nio.file.Path;
@@ -62,7 +65,10 @@ public class CompileCommand implements Command {
     List<Path> classpath = new ArrayList<>();
 
     try {
-      CompileResult result = JavaSourceCompiler.compile(sourceFile, outputDir, classpath);
+      Path workspace = WorkspaceStore.current().map(Workspace::root)
+          .orElseGet(() -> sourceFile.toAbsolutePath().getParent());
+      Path jdk = JdkSelector.current(workspace).map(j -> j.home()).orElse(null);
+      CompileResult result = JavaSourceCompiler.compile(sourceFile, outputDir, classpath, jdk);
       if (result.success()) {
         System.out.println("compiled: " + sourceFile
             + " -> " + result.outputDirectory());

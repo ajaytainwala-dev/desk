@@ -209,8 +209,10 @@ public final class JavaCommand implements Command {
         vendor = args[++i];
       }
     }
-    var plan = JdkProvisioner.install(new JdkProvisioner.InstallRequest(
+    var result = JdkProvisioner.install(new JdkProvisioner.InstallRequest(
         feature, JdkProvisioner.Vendor.fromId(vendor), yes, dryRun));
+    var plan = result.plan();
+    System.out.println("Install status: " + result.status());
     System.out.println("Install plan:");
     System.out.println("  version:  " + plan.featureVersion()
         + (JavaVersionPolicy.isLts(plan.featureVersion()) ? " LTS" : " (non-LTS)"));
@@ -219,10 +221,12 @@ public final class JavaCommand implements Command {
     System.out.println("  url:      " + plan.downloadUrl());
     System.out.println("  checksum: " + plan.checksumUrl());
     System.out.println("  license:  " + plan.licenseNote());
-    if (dryRun) {
-      System.out.println("Dry run only — nothing downloaded.");
-    }
-    return CommandResult.success();
+    System.out.println(result.message());
+    return switch (result.status()) {
+      case PLANNED -> CommandResult.success();
+      case REQUIRES_CONSENT, NOT_IMPLEMENTED ->
+          CommandResult.failure(1, result.status().name());
+    };
   }
 
   private CommandResult remove(String[] args) {

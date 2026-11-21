@@ -36,8 +36,10 @@ desk git status
 | `desk new <name>` | Create project (default **Java 25 LTS**) |
 | `desk workspace …` | list / open / close / status |
 | `desk java …` | list / detect / current / use / info / doctor |
-| `desk build` | Compile via Maven, Gradle, or javac |
+| `desk lsp …` | diagnose / complete / hover / definition / references / symbols |
+| `desk build` / `desk clean` | Build or clean via Maven, Gradle, or javac |
 | `desk test` | Run tests |
+| `desk doctor` | Aggregate JDK / project / Git / LSP health check |
 | `desk fmt` / `check` / `compile` / `run` | Existing single-file tooling |
 | `desk git …` | Status, branch, diff, commit, push, pull |
 | `desk version` / `help` | Version and help (`--version`, `--help` also work) |

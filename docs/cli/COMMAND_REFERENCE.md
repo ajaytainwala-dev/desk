@@ -7,17 +7,23 @@ desk open <path>             Open folder workspace or file
 desk new <name> [options]    Create project from template (default Java 25)
 desk workspace list|open|close|status
 desk java list|detect|current|use|info|doctor|install|remove|policy
+desk lsp status|diagnose|complete|hover|definition|references|symbols
 desk fmt [--check] <file>    Format Java source
 desk check <file>            Compile diagnostics
-desk compile <file>          Compile single file
+desk compile <file>          Compile single file (uses workspace JDK)
 desk build [compile|clean|test|package]
+desk clean                   Clean build outputs
 desk test [--watch]          Run tests via detected build system
 desk run <class>             Run compiled class
+desk doctor                  Aggregate environment health check
 desk git <status|branch|…>   Git helpers (never logs credentials)
 desk edit <file>             Open file in TUI
 desk version | --version
 desk help | --help
 ```
+
+Set `DESK_JAVA_LS` to a JDT Language Server launcher for full completion/navigation.
+`desk lsp diagnose` works with the javac fallback when JDT LS is absent.
 
 ## Java toolchain
 

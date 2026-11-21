@@ -73,10 +73,15 @@ public final class GitService {
     if (paths == null || paths.length == 0) {
       cmd.add("-A");
     } else {
+      cmd.add("--");
       for (String p : paths) {
-        if (p != null && !p.isBlank()) {
-          cmd.add(p);
+        if (p == null || p.isBlank()) {
+          continue;
         }
+        if (p.startsWith("-")) {
+          throw new JavaException("Refusing path that looks like a flag: " + p);
+        }
+        cmd.add(p);
       }
     }
     return run(root, cmd);

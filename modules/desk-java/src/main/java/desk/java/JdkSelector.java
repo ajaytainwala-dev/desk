@@ -26,9 +26,11 @@ public final class JdkSelector {
   }
 
   public static Optional<JdkInstallation> current(Path workspaceRoot) {
-    Optional<JdkInstallation> pinned = readPin(workspaceJdkFile(workspaceRoot));
-    if (pinned.isPresent()) {
-      return pinned;
+    if (workspaceRoot != null) {
+      Optional<JdkInstallation> pinned = readPin(workspaceJdkFile(workspaceRoot));
+      if (pinned.isPresent()) {
+        return pinned;
+      }
     }
     Optional<JdkInstallation> user = readPin(JdkPaths.userDefaultJdkFile());
     if (user.isPresent()) {

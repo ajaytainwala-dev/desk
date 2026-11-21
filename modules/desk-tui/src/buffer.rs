@@ -216,6 +216,7 @@ impl Buffer {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.last_edit = None;
+        self.modified = true;
     }
 
     pub fn text(&self) -> String {

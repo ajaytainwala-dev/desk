@@ -69,7 +69,11 @@ public final class ProjectTemplates {
   public static Path create(CreateRequest request) throws IOException {
     Objects.requireNonNull(request, "request");
     String name = sanitizeName(request.name());
-    Path root = request.parentDir().resolve(name).toAbsolutePath().normalize();
+    Path parent = request.parentDir().toAbsolutePath().normalize();
+    Path root = parent.resolve(name).toAbsolutePath().normalize();
+    if (!root.startsWith(parent) || root.equals(parent)) {
+      throw new IOException("Refusing to create project outside parent directory: " + name);
+    }
     if (Files.exists(root)) {
       throw new IOException("Directory already exists: " + root);
     }
@@ -238,7 +242,8 @@ public final class ProjectTemplates {
       throw new IllegalArgumentException("Project name required");
     }
     String cleaned = name.trim().replaceAll("[^a-zA-Z0-9._-]", "-");
-    if (cleaned.isEmpty()) {
+    if (cleaned.isEmpty() || ".".equals(cleaned) || "..".equals(cleaned)
+        || cleaned.contains("..")) {
       throw new IllegalArgumentException("Invalid project name: " + name);
     }
     return cleaned;

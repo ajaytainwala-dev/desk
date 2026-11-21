@@ -121,9 +121,17 @@ jobs:
           retention-days: 90
 
   build-portable:
-    name: Build portable zip (Linux)
+    name: Build portable zip
     needs: validate
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -138,16 +146,17 @@ jobs:
       - name: Zip portable distribution
         run: |
           chmod +x packaging/installers/build-portable-zip.sh
-          DESK_ZIP_PLATFORM=linux bash packaging/installers/build-portable-zip.sh \
+          DESK_ZIP_PLATFORM=${{ matrix.platform }} bash packaging/installers/build-portable-zip.sh \
             dist/desk-portable \
-            dist/desk-portable-linux.zip
+            dist/desk-portable-${{ matrix.platform }}.zip
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            cp dist/desk-portable-linux.zip dist/desk-portable.zip
+          fi
       - name: Upload portable zips
         uses: actions/upload-artifact@v4
         with:
-          name: desk-portable-zips
-          path: |
-            dist/desk-portable-linux.zip
-            dist/desk-portable.zip
+          name: desk-portable-${{ matrix.platform }}
+          path: dist/desk-portable-*.zip
           if-no-files-found: error
           retention-days: 90
 
