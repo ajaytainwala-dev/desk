@@ -146,6 +146,8 @@ pub struct Buffer {
     pub scroll_top: usize,
     pub scroll_left: usize,
     pub modified: bool,
+    /// Disk mtime observed at last load/save — used for external conflict detection.
+    pub disk_mtime: Option<SystemTime>,
     pub tab_width: usize,
     pub use_spaces: bool,
     pub auto_indent: bool,
@@ -182,6 +184,7 @@ impl Buffer {
             scroll_top: 0,
             scroll_left: 0,
             modified: false,
+            disk_mtime: None,
             tab_width: 4,
             use_spaces: true,
             auto_indent: true,
@@ -196,10 +199,31 @@ impl Buffer {
         let p = path.as_ref().to_path_buf();
         let content = fs::read_to_string(&p)?;
         let mut buffer = Self::new_empty();
-        buffer.path = Some(p);
+        buffer.path = Some(p.clone());
         buffer.set_text(&content);
         buffer.modified = false;
+        buffer.disk_mtime = fs::metadata(&p).and_then(|m| m.modified()).ok();
         Ok(buffer)
+    }
+
+    /// True when the on-disk file changed since we last loaded/saved it.
+    pub fn disk_changed_externally(&self) -> bool {
+        let Some(path) = self.path.as_ref() else {
+            return false;
+        };
+        let Some(known) = self.disk_mtime else {
+            return false;
+        };
+        match fs::metadata(path).and_then(|m| m.modified()) {
+            Ok(current) => current != known,
+            Err(_) => false,
+        }
+    }
+
+    pub fn refresh_disk_mtime(&mut self) {
+        if let Some(path) = self.path.as_ref() {
+            self.disk_mtime = fs::metadata(path).and_then(|m| m.modified()).ok();
+        }
     }
 
     pub fn set_text(&mut self, text: &str) {
@@ -235,6 +259,7 @@ impl Buffer {
         write_file_atomic(path, &content)?;
         self.path = Some(path.to_path_buf());
         self.modified = false;
+        self.disk_mtime = fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(())
     }
 

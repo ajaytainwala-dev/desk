@@ -50,6 +50,70 @@ public final class BuildService {
     };
   }
 
+  /**
+   * Starts a cancellable Maven/Gradle build (javac goals still use
+   * {@link #execute}). Caller must {@link BuildHandle#await} or cancel.
+   */
+  public static BuildHandle start(BuildRequest request) {
+    Path root = request.workspaceRoot().toAbsolutePath().normalize();
+    ProjectDescriptor project = ProjectDetector.detect(root);
+    Path jdkHome = request.projectJdkHome();
+    if (jdkHome == null) {
+      jdkHome = JdkSelector.current(root)
+          .map(JdkInstallation::home)
+          .orElseGet(JdkDiscovery::preferredJdk);
+    }
+    String system = project.buildSystem();
+    if ("maven".equals(system) || "gradle".equals(system)) {
+      List<String> cmd = "maven".equals(system)
+          ? mavenCommand(root, request.goal())
+          : gradleCommand(root, request.goal());
+      Map<String, String> env = new java.util.LinkedHashMap<>();
+      if (jdkHome != null) {
+        env.put("JAVA_HOME", jdkHome.toAbsolutePath().toString());
+        String path = System.getenv().getOrDefault("PATH", "");
+        env.put("PATH", jdkHome.resolve("bin") + (isWindows() ? ";" : ":") + path);
+      }
+      BuildSystem bs = "maven".equals(system) ? BuildSystem.MAVEN : BuildSystem.GRADLE;
+      return BuildHandle.start(cmd, root, env, bs);
+    }
+    throw new JavaException(
+        "Cancellable start is supported for Maven/Gradle; use execute() for plain javac projects");
+  }
+
+  private static List<String> mavenCommand(Path root, BuildRequest.Goal goal) {
+    List<String> cmd = new ArrayList<>();
+    Path mvnw = root.resolve(isWindows() ? "mvnw.cmd" : "mvnw");
+    cmd.add(Files.isRegularFile(mvnw) ? mvnw.toAbsolutePath().toString()
+        : (isWindows() ? "mvn.cmd" : "mvn"));
+    cmd.add("-B");
+    cmd.add(switch (goal) {
+      case CLEAN -> "clean";
+      case TEST -> "test";
+      case PACKAGE, RUN -> "package";
+      default -> "compile";
+    });
+    if (goal == BuildRequest.Goal.RUN) {
+      cmd.add("-DskipTests");
+    }
+    return cmd;
+  }
+
+  private static List<String> gradleCommand(Path root, BuildRequest.Goal goal) {
+    List<String> cmd = new ArrayList<>();
+    Path gradlew = root.resolve(isWindows() ? "gradlew.bat" : "gradlew");
+    cmd.add(Files.isRegularFile(gradlew) ? gradlew.toAbsolutePath().toString()
+        : (isWindows() ? "gradle.bat" : "gradle"));
+    cmd.add(switch (goal) {
+      case CLEAN -> "clean";
+      case TEST -> "test";
+      case PACKAGE -> "assemble";
+      case RUN -> "run";
+      default -> "classes";
+    });
+    return cmd;
+  }
+
   private static BuildResult runMaven(Path root, BuildRequest.Goal goal, Path jdkHome, long start) {
     List<String> cmd = new ArrayList<>();
     Path mvnw = root.resolve(isWindows() ? "mvnw.cmd" : "mvnw");

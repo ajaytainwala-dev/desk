@@ -1,6 +1,7 @@
 use crate::app::{App, MenuTab};
 use crate::config::{LineNumberMode, Theme};
 use crate::highlighter::{TokenKind, style_for_kind};
+use crate::overlay::Overlay;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -102,6 +103,152 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
     render_toasts(f, app, area, &theme);
     if app.show_help {
         render_help(f, area, &theme);
+    }
+    if app.overlay.is_active() {
+        render_overlay(f, app, area, &theme);
+    }
+}
+
+fn render_overlay(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let width = (area.width * 3 / 4)
+        .max(40)
+        .min(area.width.saturating_sub(2));
+    let height = (area.height / 2).max(8).min(area.height.saturating_sub(2));
+    let popup = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    match &app.overlay {
+        Overlay::Confirm { title, message, .. } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(title.as_str())
+                .border_style(Style::default().fg(theme.warning));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            f.render_widget(
+                Paragraph::new(format!("{}\n\n[Enter] Yes   [Esc] No", message)),
+                inner,
+            );
+        }
+        Overlay::Palette {
+            query,
+            selected,
+            items,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Command Palette  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  {}", item.label, item.hint)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::FuzzyFiles {
+            query,
+            selected,
+            matches,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Go to File  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = matches
+                .iter()
+                .enumerate()
+                .map(|(i, m)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(m.path.display().to_string()).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::FindInFiles {
+            query,
+            selected,
+            matches,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Find in Files  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = matches
+                .iter()
+                .enumerate()
+                .map(|(i, hit)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!(
+                        "{}:{}  {}",
+                        hit.path.display(),
+                        hit.line,
+                        hit.preview
+                    ))
+                    .style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::Completions { items, selected } => {
+            let block = Block::default().borders(Borders::ALL).title("Completions");
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  {}", item.label, item.detail)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::Outline { symbols, selected } => {
+            let block = Block::default().borders(Borders::ALL).title("Outline");
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = symbols
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  :{}", s.name, s.line)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::None => {}
     }
 }
 

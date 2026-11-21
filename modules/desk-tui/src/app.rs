@@ -1,7 +1,9 @@
 use crate::buffer::{Buffer, Selection};
 use crate::config::{EditorConfig, LineNumberMode, Theme};
 use crate::highlighter::Language;
+use crate::lsp::{LspBridge, LspDiagnostic, LspEvent};
 use crate::mode::Mode;
+use crate::overlay::{self, ConfirmAction, Overlay, default_palette_items, rank_paths};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -322,6 +324,17 @@ pub struct App {
     pub next_job_id: u64,
     pub bracket_match: Option<(usize, usize)>,
     pub pending_key: Option<char>,
+
+    pub overlay: Overlay,
+    pub lsp: LspBridge,
+    pub problems: Vec<LspDiagnostic>,
+    pub show_problems: bool,
+    pub problems_selected: usize,
+    pub pending_lsp_request: Option<u64>,
+    pub git_branch: String,
+    pub java_status: String,
+    pub project_kind: String,
+    pub hover_text: Option<String>,
 }
 
 impl App {
@@ -414,7 +427,7 @@ impl App {
             terminal_focused: false,
             terminal_history: Vec::new(),
             terminal_history_index: 0,
-            cwd,
+            cwd: cwd.clone(),
             current_file,
             tabs: vec![initial_tab],
             active_tab: 0,
@@ -432,9 +445,23 @@ impl App {
             next_job_id: 1,
             bracket_match: None,
             pending_key: None,
+            overlay: Overlay::None,
+            lsp: LspBridge::start(&cwd),
+            problems: Vec::new(),
+            show_problems: false,
+            problems_selected: 0,
+            pending_lsp_request: None,
+            git_branch: detect_git_branch(&cwd),
+            java_status: "Java ?".into(),
+            project_kind: detect_project_kind(&cwd),
+            hover_text: None,
         };
         if initial_path.is_none() {
             app.restore_session_if_present();
+        }
+        if let Some(path) = app.current_file.clone() {
+            let text = app.buffer.text();
+            app.lsp.did_open(&path, language_id(app.language), &text);
         }
         app
     }
@@ -755,7 +782,7 @@ impl App {
 
         self.buffer = buffer;
         self.language = language;
-        self.current_file = Some(canonical);
+        self.current_file = Some(canonical.clone());
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
@@ -763,6 +790,8 @@ impl App {
         self.terminal_focused = false;
         self.last_edit_time = Instant::now();
         self.refresh_explorer();
+        self.lsp
+            .did_open(&canonical, language_id(language), &self.buffer.text());
         Ok(())
     }
 
@@ -804,10 +833,31 @@ impl App {
         self.toast("New file", "INFO");
     }
 
+    pub fn request_close_current_file(&mut self) {
+        self.sync_active_tab();
+        if self.buffer.modified {
+            self.overlay = Overlay::Confirm {
+                title: "Unsaved changes".into(),
+                message: "Close tab and discard unsaved edits?".into(),
+                action: ConfirmAction::CloseTab,
+            };
+            return;
+        }
+        self.close_current_file_forced();
+    }
+
     pub fn close_current_file(&mut self) {
+        self.request_close_current_file();
+    }
+
+    pub fn close_current_file_forced(&mut self) {
         self.sync_active_tab();
         if self.tabs.is_empty() {
             return;
+        }
+        if let Some(path) = self.current_file.clone() {
+            // Notify LSP of close when available.
+            let _ = path;
         }
         let closing = self.active_tab.min(self.tabs.len() - 1);
         self.tabs.remove(closing);
@@ -857,15 +907,44 @@ impl App {
 
     pub fn save_all_tabs(&mut self) -> Result<(), std::io::Error> {
         self.sync_active_tab();
+        let mut skipped_untitled = 0usize;
         for tab in &mut self.tabs {
             if let Some(path) = tab.path.clone() {
+                if tab.buffer.disk_changed_externally() {
+                    return Err(std::io::Error::other(format!(
+                        "File changed on disk: {} — save individually after reviewing",
+                        path.display()
+                    )));
+                }
                 tab.buffer.save_as(&path)?;
+            } else if tab.buffer.modified {
+                skipped_untitled += 1;
             }
         }
         if let Some(path) = self.current_file.clone() {
+            if self.buffer.disk_changed_externally() {
+                self.overlay = Overlay::Confirm {
+                    title: "File changed on disk".into(),
+                    message: format!("Overwrite {} anyway?", path.display()),
+                    action: ConfirmAction::SaveOverwriteConflict,
+                };
+                return Ok(());
+            }
             self.buffer.save_as(&path)?;
+        } else if self.buffer.modified {
+            skipped_untitled += 1;
         }
-        self.toast("Saved all", "SUCCESS");
+        if skipped_untitled > 0 {
+            self.toast(
+                &format!(
+                    "Saved named tabs; {} untitled buffer(s) still need Save As",
+                    skipped_untitled
+                ),
+                "WARN",
+            );
+        } else {
+            self.toast("Saved all", "SUCCESS");
+        }
         Ok(())
     }
 
@@ -886,6 +965,16 @@ impl App {
             && !parent.is_dir()
         {
             fs::create_dir_all(parent)?;
+        }
+        if self.buffer.path.as_ref().is_some_and(|p| p == path)
+            && self.buffer.disk_changed_externally()
+        {
+            self.overlay = Overlay::Confirm {
+                title: "File changed on disk".into(),
+                message: format!("Overwrite {} anyway?", path.display()),
+                action: ConfirmAction::SaveOverwriteConflict,
+            };
+            return Ok(());
         }
         if let Err(e) = self.buffer.save_as(path) {
             let kind = e.kind();
@@ -946,7 +1035,6 @@ impl App {
     }
 
     pub fn status_line(&self) -> String {
-        let modified = if self.buffer.modified { "+" } else { "" };
         let sel = match self.buffer.selection {
             Some(s) if !s.is_empty() => {
                 let (sl, sc, el, ec) = s.normalized();
@@ -969,21 +1057,30 @@ impl App {
             }
             _ => String::new(),
         };
+        let errs = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "ERROR")
+            .count();
+        let warns = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "WARNING")
+            .count();
         format!(
-            " {} | {} | {} | Ln {}, Col {}{}{} | {} | {} | utf-8{}",
+            " {}{} | {} | {} | {} | E:{} W:{} | Ln {}, Col {}{} | {} | {}{}",
             self.file_name_or_no_name(),
-            self.language.display_name(),
-            if self.buffer.modified {
-                "UNSAVED"
-            } else {
-                "SAVED"
-            },
+            if self.buffer.modified { " ●" } else { "" },
+            self.project_kind,
+            self.git_branch,
+            self.lsp.status,
+            errs,
+            warns,
             self.current_line_index() + 1,
             self.current_column() + 1,
-            modified,
             sel,
             self.mode.name(),
-            self.config.theme,
+            self.language.display_name(),
             job
         )
     }
@@ -1007,6 +1104,7 @@ impl App {
 
     pub fn tick(&mut self) {
         self.poll_job();
+        self.poll_lsp();
         if !self.config.auto_save || !self.buffer.modified || self.buffer.path.is_none() {
             return;
         }
@@ -2119,9 +2217,14 @@ impl App {
                 }
                 self.running = false;
             }
-            "q" | "quit" => self.running = false,
+            "q" | "quit" => self.request_quit(),
             "q!" => {
                 self.buffer.modified = false;
+                for tab in &mut self.tabs {
+                    tab.buffer.modified = false;
+                }
+                self.persist_session();
+                self.lsp.shutdown();
                 self.running = false;
             }
             "e" | "edit" => {
@@ -2271,9 +2374,49 @@ impl App {
                 }
             }
             "pwd" => self.toast(&self.cwd.display().to_string(), "INFO"),
+            "mkdir" => {
+                if rest.is_empty() {
+                    self.toast("Usage: :mkdir <name>", "WARN");
+                } else {
+                    let path = self.cwd.join(rest);
+                    match fs::create_dir_all(&path) {
+                        Ok(()) => {
+                            self.refresh_explorer();
+                            self.toast(&format!("Created {}", path.display()), "SUCCESS");
+                        }
+                        Err(e) => self.toast(&format!("mkdir failed: {}", e), "ERROR"),
+                    }
+                }
+            }
+            "mv" | "rename" => {
+                let parts: Vec<&str> = rest.split_whitespace().collect();
+                if parts.len() != 2 {
+                    self.toast("Usage: :mv <from> <to>", "WARN");
+                } else {
+                    let from = PathBuf::from(parts[0]);
+                    let to = PathBuf::from(parts[1]);
+                    match fs::rename(&from, &to) {
+                        Ok(()) => {
+                            self.refresh_explorer();
+                            self.toast("Renamed", "SUCCESS");
+                        }
+                        Err(e) => self.toast(&format!("rename failed: {}", e), "ERROR"),
+                    }
+                }
+            }
             "help" => self.show_help = !self.show_help,
             "reload" => self.reload_config(),
-            _ => self.toast(&format!("Unknown command: :{}", cmd), "WARN"),
+            _ => {
+                // Go-to-line: bare number after :
+                if let Ok(line) = head.parse::<usize>() {
+                    if line > 0 {
+                        self.buffer.cursor.line = line - 1;
+                        self.buffer.cursor.col = 0;
+                    }
+                } else {
+                    self.toast(&format!("Unknown command: :{}", cmd), "WARN");
+                }
+            }
         }
     }
 
@@ -2328,6 +2471,540 @@ impl App {
         self.explorer_focused = self.show_explorer;
         self.terminal_focused = false;
     }
+
+    pub fn request_quit(&mut self) {
+        self.sync_active_tab();
+        if self.tabs.iter().any(|t| t.buffer.modified) || self.buffer.modified {
+            self.overlay = Overlay::Confirm {
+                title: "Unsaved changes".into(),
+                message: "Quit and discard unsaved edits?".into(),
+                action: ConfirmAction::Quit,
+            };
+            return;
+        }
+        self.persist_session();
+        self.lsp.shutdown();
+        self.running = false;
+    }
+
+    pub fn confirm_yes(&mut self) {
+        let action = match &self.overlay {
+            Overlay::Confirm { action, .. } => *action,
+            _ => {
+                self.overlay.close();
+                return;
+            }
+        };
+        self.overlay.close();
+        match action {
+            ConfirmAction::CloseTab => self.close_current_file_forced(),
+            ConfirmAction::Quit => {
+                for tab in &mut self.tabs {
+                    tab.buffer.modified = false;
+                }
+                self.buffer.modified = false;
+                self.persist_session();
+                self.lsp.shutdown();
+                self.running = false;
+            }
+            ConfirmAction::ReloadConflict => {
+                if let Some(path) = self.current_file.clone() {
+                    let _ = self.open_file_with_options(&path, true);
+                }
+            }
+            ConfirmAction::SaveOverwriteConflict => {
+                if let Some(path) = self.current_file.clone() {
+                    let _ = self.buffer.save_as(&path);
+                    self.sync_active_tab();
+                    self.toast("Saved (overwrote disk changes)", "WARN");
+                }
+            }
+            ConfirmAction::DeletePath => {
+                if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected).cloned() {
+                    let _ = if path.is_dir() {
+                        fs::remove_dir_all(&path)
+                    } else {
+                        fs::remove_file(&path)
+                    };
+                    self.refresh_explorer();
+                    self.toast(&format!("Deleted {}", path.display()), "INFO");
+                }
+            }
+        }
+    }
+
+    pub fn confirm_no(&mut self) {
+        self.overlay.close();
+    }
+
+    pub fn open_palette(&mut self) {
+        self.overlay = Overlay::Palette {
+            query: String::new(),
+            selected: 0,
+            items: default_palette_items(),
+        };
+    }
+
+    pub fn open_fuzzy_files(&mut self) {
+        let paths = collect_workspace_files(&self.cwd, 2000);
+        let matches = rank_paths("", &paths, 100);
+        self.overlay = Overlay::FuzzyFiles {
+            query: String::new(),
+            selected: 0,
+            matches,
+        };
+    }
+
+    pub fn open_find_in_files(&mut self) {
+        self.overlay = Overlay::FindInFiles {
+            query: String::new(),
+            selected: 0,
+            matches: Vec::new(),
+        };
+    }
+
+    pub fn run_palette_item(&mut self, id: &str) {
+        self.overlay.close();
+        match id {
+            "save" => {
+                let _ = self.save_current();
+            }
+            "save_all" => {
+                let _ = self.save_all_tabs();
+            }
+            "fuzzy" => self.open_fuzzy_files(),
+            "find_in_files" => self.open_find_in_files(),
+            "goto_line" => {
+                self.show_command_line = true;
+                self.command_line = ":".to_string();
+                self.toast("Type line number after : and Enter", "INFO");
+            }
+            "outline" => self.request_outline(),
+            "problems" => {
+                self.show_problems = !self.show_problems;
+                if self.show_problems {
+                    self.show_output = true;
+                }
+            }
+            "complete" => self.trigger_completion(),
+            "definition" => self.goto_definition(),
+            "references" => self.find_references(),
+            "hover" => self.show_hover(),
+            "format" => self.format_current(),
+            "build" | "compile" => self.compile_current_file(),
+            "run" => self.run_current_file(),
+            "explorer_new_file" => self.explorer_new_file(),
+            "explorer_new_dir" => self.explorer_new_dir(),
+            "explorer_rename" => self.explorer_rename(),
+            "explorer_delete" => self.explorer_delete(),
+            "quit" => self.request_quit(),
+            _ => self.toast(&format!("Unknown action: {}", id), "WARN"),
+        }
+    }
+
+    pub fn trigger_completion(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            self.toast("No file open", "WARN");
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_complete(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+            self.toast("Requesting completions…", "INFO");
+        }
+    }
+
+    pub fn goto_definition(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_definition(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn find_references(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_references(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn show_hover(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_hover(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn request_outline(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            // Local outline fallback: scan class/method keywords
+            let symbols = local_java_outline(&self.buffer.lines);
+            self.overlay = Overlay::Outline {
+                symbols,
+                selected: 0,
+            };
+            return;
+        }
+        if let Some(id) = self.lsp.request_symbols(&path) {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn poll_lsp(&mut self) {
+        for ev in self.lsp.poll_events() {
+            match ev {
+                LspEvent::Diagnostics { path, items } => {
+                    self.problems.retain(|d| d.path != path);
+                    self.problems.extend(items);
+                    self.problems.sort_by(|a, b| {
+                        (&a.path, a.line, a.column).cmp(&(&b.path, b.line, b.column))
+                    });
+                }
+                LspEvent::Completions { request_id, items } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if items.is_empty() {
+                            self.toast("No completions", "INFO");
+                        } else {
+                            self.overlay = Overlay::Completions { items, selected: 0 };
+                        }
+                    }
+                }
+                LspEvent::Hover {
+                    request_id,
+                    contents,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if contents.is_empty() {
+                            self.toast("No hover info", "INFO");
+                        } else {
+                            self.hover_text = Some(contents.clone());
+                            self.toast(&contents.chars().take(80).collect::<String>(), "INFO");
+                        }
+                    }
+                }
+                LspEvent::Locations {
+                    request_id,
+                    kind,
+                    items,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if items.is_empty() {
+                            self.toast(&format!("No {}", kind), "INFO");
+                        } else {
+                            let loc = &items[0];
+                            let _ = self.open_file(&loc.path);
+                            self.buffer.cursor.line = loc.line.saturating_sub(1);
+                            self.buffer.cursor.col = loc.column.saturating_sub(1);
+                            if items.len() > 1 {
+                                self.show_output = true;
+                                for item in &items {
+                                    self.push_output(
+                                        &format!(
+                                            "{}:{}:{}",
+                                            item.path.display(),
+                                            item.line,
+                                            item.column
+                                        ),
+                                        OutputKind::Info,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                LspEvent::Symbols { request_id, items } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        self.overlay = Overlay::Outline {
+                            symbols: items,
+                            selected: 0,
+                        };
+                    }
+                }
+                LspEvent::Ready { .. } | LspEvent::Unavailable { .. } | LspEvent::Crashed => {}
+                LspEvent::Error { message } => self.toast(&message, "ERROR"),
+            }
+        }
+    }
+
+    pub fn persist_session(&self) {
+        let desk = self.cwd.join(".desk");
+        let _ = fs::create_dir_all(&desk);
+        let mut paths = Vec::new();
+        for tab in &self.tabs {
+            if let Some(p) = &tab.path {
+                paths.push(format!(
+                    "{{\"path\":\"{}\"}}",
+                    p.display()
+                        .to_string()
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                ));
+            }
+        }
+        let body = format!(
+            "{{\n  \"openDocuments\": [\n    {}\n  ]\n}}\n",
+            paths.join(",\n    ")
+        );
+        let _ = fs::write(desk.join("session.json"), body);
+    }
+
+    pub fn jump_to_problem(&mut self, index: usize) {
+        if let Some(diag) = self.problems.get(index).cloned() {
+            let _ = self.open_file(&diag.path);
+            self.buffer.cursor.line = diag.line.saturating_sub(1);
+            self.buffer.cursor.col = diag.column.saturating_sub(1);
+            self.problems_selected = index;
+        }
+    }
+
+    pub fn next_problem(&mut self) {
+        if self.problems.is_empty() {
+            return;
+        }
+        self.problems_selected = (self.problems_selected + 1) % self.problems.len();
+        self.jump_to_problem(self.problems_selected);
+    }
+
+    pub fn prev_problem(&mut self) {
+        if self.problems.is_empty() {
+            return;
+        }
+        if self.problems_selected == 0 {
+            self.problems_selected = self.problems.len() - 1;
+        } else {
+            self.problems_selected -= 1;
+        }
+        self.jump_to_problem(self.problems_selected);
+    }
+
+    pub fn explorer_new_file(&mut self) {
+        self.show_command_line = true;
+        self.command_line = ":new ".to_string();
+        self.toast("Enter new file name", "INFO");
+    }
+
+    pub fn explorer_new_dir(&mut self) {
+        self.show_command_line = true;
+        self.command_line = ":mkdir ".to_string();
+        self.toast("Enter new folder name", "INFO");
+    }
+
+    pub fn explorer_rename(&mut self) {
+        if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected) {
+            self.show_command_line = true;
+            self.command_line = format!(":mv {} ", path.display());
+        }
+    }
+
+    pub fn explorer_delete(&mut self) {
+        if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected) {
+            self.overlay = Overlay::Confirm {
+                title: "Delete".into(),
+                message: format!("Delete {}?", path.display()),
+                action: ConfirmAction::DeletePath,
+            };
+        }
+    }
+
+    pub fn apply_completion(&mut self, insert: &str) {
+        for ch in insert.chars() {
+            if ch == '\n' {
+                self.buffer.insert_newline();
+            } else {
+                self.buffer.insert_char(ch);
+            }
+        }
+        self.overlay.close();
+        self.last_edit_time = Instant::now();
+    }
+
+    pub fn status_left(&self) -> String {
+        let file = self
+            .current_file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("Untitled");
+        let dirty = if self.buffer.modified { " ●" } else { "" };
+        format!("{}{}", file, dirty)
+    }
+
+    pub fn status_right(&self) -> String {
+        let errs = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "ERROR")
+            .count();
+        let warns = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "WARNING")
+            .count();
+        format!(
+            "{} | {} | {} | E:{} W:{} | {}",
+            self.project_kind,
+            self.git_branch,
+            self.lsp.status,
+            errs,
+            warns,
+            self.mode.name()
+        )
+    }
+}
+
+fn language_id(lang: Language) -> &'static str {
+    match lang {
+        Language::Java => "java",
+        Language::Rust => "rust",
+        Language::Python => "python",
+        Language::Json => "json",
+        _ => "plaintext",
+    }
+}
+
+fn detect_git_branch(cwd: &Path) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(cwd)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() {
+                "git:?".into()
+            } else {
+                format!("git:{}", s)
+            }
+        }
+        _ => "git:—".into(),
+    }
+}
+
+fn detect_project_kind(cwd: &Path) -> String {
+    if cwd.join("pom.xml").is_file() {
+        "Maven".into()
+    } else if cwd.join("build.gradle").is_file() || cwd.join("build.gradle.kts").is_file() {
+        "Gradle".into()
+    } else if cwd.join("src").is_dir() {
+        "Java".into()
+    } else {
+        "Folder".into()
+    }
+}
+
+pub fn collect_workspace_files_pub(root: &Path, limit: usize) -> Vec<PathBuf> {
+    collect_workspace_files(root, limit)
+}
+
+fn collect_workspace_files(root: &Path, limit: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>, limit: usize, depth: usize) {
+        if out.len() >= limit || depth > 10 {
+            return;
+        }
+        let Ok(rd) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in rd.flatten() {
+            if out.len() >= limit {
+                return;
+            }
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.')
+                || name == "target"
+                || name == "node_modules"
+                || name == "desk-out"
+                || name == "build"
+            {
+                continue;
+            }
+            if path.is_dir() {
+                walk(&path, out, limit, depth + 1);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    walk(root, &mut out, limit, 0);
+    out
+}
+
+fn local_java_outline(lines: &[String]) -> Vec<overlay::OutlineSymbol> {
+    let mut symbols = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if t.starts_with("class ")
+            || t.starts_with("interface ")
+            || t.starts_with("enum ")
+            || t.starts_with("record ")
+            || ((t.contains("void ") || t.contains("public ") || t.contains("private "))
+                && t.contains('(')
+                && t.contains(')'))
+        {
+            let name = t
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or(t)
+                .trim_matches('{')
+                .to_string();
+            symbols.push(overlay::OutlineSymbol {
+                name,
+                kind: "local".into(),
+                line: i + 1,
+                column: 1,
+            });
+        }
+    }
+    symbols
 }
 
 #[cfg(test)]
@@ -2371,6 +3048,43 @@ mod tests {
         app.command_line = format!(":e! {}", file.display());
         app.execute_command_line();
         assert_eq!(app.buffer.text(), "class Demo {}");
+    }
+
+    #[test]
+    fn dirty_close_requests_confirmation() {
+        let mut app = test_app();
+        app.buffer.set_text("unsaved");
+        assert!(app.buffer.modified);
+        app.request_close_current_file();
+        assert!(matches!(app.overlay, Overlay::Confirm { .. }));
+        assert!(app.buffer.modified);
+        app.confirm_no();
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.buffer.modified);
+    }
+
+    #[test]
+    fn save_all_reports_untitled() {
+        let mut app = test_app();
+        app.buffer.set_text("untitled content");
+        assert!(app.buffer.modified);
+        assert!(app.current_file.is_none());
+        app.save_all_tabs().unwrap();
+        assert!(app.buffer.modified);
+    }
+
+    #[test]
+    fn disk_mtime_conflict_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Conflict.java");
+        fs::write(&file, "class A {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        assert!(!app.buffer.disk_changed_externally());
+        // External change
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&file, "class B {}").unwrap();
+        assert!(app.buffer.disk_changed_externally());
     }
 
     #[test]

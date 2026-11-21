@@ -1,92 +1,61 @@
 package desk.java.lsp;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
+import desk.java.JavaException;
+
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Placeholder adapter that launches an external language server binary
- * (for example a JDT LS launcher). Full JSON-RPC LSP framing is intentionally
- * staged; this class establishes process lifecycle isolation so the editor is
- * never tightly coupled to one server.
+ * @deprecated Use {@link LspLanguageClient} via {@link LanguageServerHost}.
+ * This stub remains only to avoid breaking reflective references; all
+ * intelligence methods fail explicitly (never return empty success).
  */
+@Deprecated
 public final class ExternalProcessLanguageClient implements LanguageClient {
 
-  private final Path serverCommand;
-  private Process process;
-  private Path workspaceRoot;
-
-  public ExternalProcessLanguageClient(Path serverCommand) {
-    this.serverCommand = serverCommand;
-  }
-
   @Override
-  public void start(Path workspaceRoot) throws Exception {
-    this.workspaceRoot = workspaceRoot;
-    ProcessBuilder pb = new ProcessBuilder(serverCommand.toString(), workspaceRoot.toString());
-    pb.redirectErrorStream(true);
-    process = pb.start();
-    // Drain startup output on a daemon thread so a noisy server cannot block.
-    Thread t = new Thread(() -> {
-      try (BufferedReader reader = new BufferedReader(
-          new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-        while (reader.readLine() != null) {
-          // intentionally discard for now
-        }
-      } catch (Exception ignored) {
-        // ignore
-      }
-    }, "desk-ls-stdout");
-    t.setDaemon(true);
-    t.start();
+  public void start(Path workspaceRoot) {
+    throw new JavaException(
+        "ExternalProcessLanguageClient is deprecated — use LanguageServerHost / LspLanguageClient");
   }
 
   @Override
   public void stop() {
-    if (process != null) {
-      process.destroy();
-      try {
-        process.destroyForcibly();
-      } catch (Exception ignored) {
-        // ignore
-      }
-      process = null;
-    }
   }
 
   @Override
   public boolean isRunning() {
-    return process != null && process.isAlive();
+    return false;
   }
 
   @Override
   public CompletableFuture<List<LspDiagnostic>> diagnose(Path file, String content) {
-    // Until JSON-RPC is wired, fall back to javac client for real diagnostics.
-    JavacLanguageClient fallback = new JavacLanguageClient();
-    fallback.start(workspaceRoot != null ? workspaceRoot : file.getParent());
-    return fallback.diagnose(file, content);
+    return CompletableFuture.failedFuture(unsupported());
   }
 
   @Override
   public CompletableFuture<List<CompletionItem>> complete(Path file, String content, int line, int character) {
-    return CompletableFuture.completedFuture(List.of());
+    return CompletableFuture.failedFuture(unsupported());
   }
 
   @Override
   public CompletableFuture<List<Location>> definition(Path file, String content, int line, int character) {
-    return CompletableFuture.completedFuture(List.of());
+    return CompletableFuture.failedFuture(unsupported());
   }
 
   @Override
   public CompletableFuture<List<Location>> references(Path file, String content, int line, int character) {
-    return CompletableFuture.completedFuture(List.of());
+    return CompletableFuture.failedFuture(unsupported());
   }
 
   @Override
   public CompletableFuture<List<CodeAction>> codeActions(Path file, String content, int line, int character) {
-    return CompletableFuture.completedFuture(List.of());
+    return CompletableFuture.failedFuture(unsupported());
+  }
+
+  private static JavaException unsupported() {
+    return new JavaException(
+        "ExternalProcessLanguageClient is deprecated. Use desk lsp with DESK_JAVA_LS / jdtls.");
   }
 }

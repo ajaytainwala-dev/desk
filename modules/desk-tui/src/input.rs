@@ -5,6 +5,8 @@ use crossterm::event::{
 use crate::app::{App, MenuTab};
 use crate::buffer::Selection;
 use crate::mode::Mode;
+use crate::overlay::default_palette_items;
+use crate::overlay::{Overlay, find_in_files, rank_paths};
 
 pub fn handle_event(app: &mut App, event: Event) {
     match event {
@@ -16,6 +18,11 @@ pub fn handle_event(app: &mut App, event: Event) {
 }
 
 pub fn handle_key_event(app: &mut App, key: KeyEvent) {
+    if app.overlay.is_active() {
+        handle_overlay_key(app, key);
+        return;
+    }
+
     if app.show_help {
         if matches!(
             key.code,
@@ -87,7 +94,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
-                app.running = false;
+                app.request_quit();
                 return;
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
@@ -98,6 +105,25 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
                 } else if let Err(e) = app.save_current() {
                     app.toast(&format!("Save failed: {}", e), "ERROR");
                 }
+                return;
+            }
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    app.open_palette();
+                } else {
+                    app.open_fuzzy_files();
+                }
+                return;
+            }
+            KeyCode::Char(' ') => {
+                app.trigger_completion();
+                return;
+            }
+            KeyCode::Char('m') | KeyCode::Char('M')
+                if key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                app.show_problems = !app.show_problems;
+                app.show_output = app.show_problems;
                 return;
             }
             KeyCode::Tab | KeyCode::PageDown => {
@@ -113,13 +139,21 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
                 return;
             }
             KeyCode::Char('o') | KeyCode::Char('O') => {
-                app.explorer_focused = true;
-                app.terminal_focused = false;
-                app.toast("Choose a file in the explorer (Enter)", "INFO");
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    app.request_outline();
+                } else {
+                    app.explorer_focused = true;
+                    app.terminal_focused = false;
+                    app.toast("Choose a file in the explorer (Enter)", "INFO");
+                }
                 return;
             }
             KeyCode::Char('f') | KeyCode::Char('F') => {
-                app.open_search(false);
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    app.open_find_in_files();
+                } else {
+                    app.open_search(false);
+                }
                 return;
             }
             KeyCode::Char('h') | KeyCode::Char('H') => {
@@ -259,6 +293,22 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
         }
         KeyCode::F(10) => {
             app.check_current_java();
+            return;
+        }
+        KeyCode::F(11) => {
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                app.prev_problem();
+            } else {
+                app.next_problem();
+            }
+            return;
+        }
+        KeyCode::F(12) => {
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                app.find_references();
+            } else {
+                app.goto_definition();
+            }
             return;
         }
         _ => {}
@@ -935,5 +985,164 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
             }
         }
         _ => {}
+    }
+}
+
+fn handle_overlay_key(app: &mut App, key: KeyEvent) {
+    match &mut app.overlay {
+        Overlay::Confirm { .. } => match key.code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_yes(),
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => app.confirm_no(),
+            _ => {}
+        },
+        Overlay::Palette {
+            query,
+            selected,
+            items,
+        } => match key.code {
+            KeyCode::Esc => app.overlay.close(),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Down => {
+                if *selected + 1 < items.len() {
+                    *selected += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(item) = items.get(*selected).cloned() {
+                    app.run_palette_item(&item.id);
+                }
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                let q = query.clone();
+                let all = default_palette_items();
+                let filtered: Vec<_> = all
+                    .into_iter()
+                    .filter(|i| {
+                        q.is_empty()
+                            || i.label.to_lowercase().contains(&q.to_lowercase())
+                            || i.id.contains(&q.to_lowercase())
+                    })
+                    .collect();
+                *selected = 0;
+                if let Overlay::Palette { items, .. } = &mut app.overlay {
+                    *items = filtered;
+                }
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                query.push(c);
+                let q = query.clone();
+                let all = default_palette_items();
+                let filtered: Vec<_> = all
+                    .into_iter()
+                    .filter(|i| {
+                        i.label.to_lowercase().contains(&q.to_lowercase())
+                            || i.id.contains(&q.to_lowercase())
+                    })
+                    .collect();
+                *selected = 0;
+                if let Overlay::Palette { items, .. } = &mut app.overlay {
+                    *items = filtered;
+                }
+            }
+            _ => {}
+        },
+        Overlay::FuzzyFiles {
+            query,
+            selected,
+            matches,
+        } => match key.code {
+            KeyCode::Esc => app.overlay.close(),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Down => {
+                if *selected + 1 < matches.len() {
+                    *selected += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(m) = matches.get(*selected).cloned() {
+                    app.overlay.close();
+                    let _ = app.open_file(&m.path);
+                }
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                let paths = crate::app::collect_workspace_files_pub(&app.cwd, 2000);
+                *matches = rank_paths(query, &paths, 100);
+                *selected = 0;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                query.push(c);
+                let paths = crate::app::collect_workspace_files_pub(&app.cwd, 2000);
+                *matches = rank_paths(query, &paths, 100);
+                *selected = 0;
+            }
+            _ => {}
+        },
+        Overlay::FindInFiles {
+            query,
+            selected,
+            matches,
+        } => match key.code {
+            KeyCode::Esc => app.overlay.close(),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Down => {
+                if *selected + 1 < matches.len() {
+                    *selected += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(hit) = matches.get(*selected).cloned() {
+                    app.overlay.close();
+                    let _ = app.open_file(&hit.path);
+                    app.buffer.cursor.line = hit.line.saturating_sub(1);
+                    app.buffer.cursor.col = hit.column.saturating_sub(1);
+                }
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                *matches = find_in_files(&app.cwd, query, 200);
+                *selected = 0;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                query.push(c);
+                *matches = find_in_files(&app.cwd, query, 200);
+                *selected = 0;
+            }
+            _ => {}
+        },
+        Overlay::Completions { items, selected } => match key.code {
+            KeyCode::Esc => app.overlay.close(),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Down => {
+                if *selected + 1 < items.len() {
+                    *selected += 1;
+                }
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                if let Some(item) = items.get(*selected).cloned() {
+                    app.apply_completion(&item.insert);
+                }
+            }
+            _ => app.overlay.close(),
+        },
+        Overlay::Outline { symbols, selected } => match key.code {
+            KeyCode::Esc => app.overlay.close(),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Down => {
+                if *selected + 1 < symbols.len() {
+                    *selected += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(sym) = symbols.get(*selected).cloned() {
+                    app.overlay.close();
+                    app.buffer.cursor.line = sym.line.saturating_sub(1);
+                    app.buffer.cursor.col = sym.column.saturating_sub(1);
+                }
+            }
+            _ => {}
+        },
+        Overlay::None => {}
     }
 }
