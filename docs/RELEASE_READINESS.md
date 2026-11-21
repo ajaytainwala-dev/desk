@@ -192,16 +192,16 @@ See `docs/REMAINING_LIMITATIONS.md`. Highlights: no TUI debug panel; no Spring B
 |-----|-----|
 | `origin/main` | `4c69dbb77187f6f8c16dd1bc5e643c2fce821b5d` |
 | PR #4 head (`cursor/desk-workbench-foundation-22b9`) | `75a47fa909681525c898719e1aa683753880414b` (security: JDK checksum + workspace-edit clamp) |
-| PR #5 head (`cursor/desk-phase-6-java-debug-22b9`) | Branch tip after release-closure commits (verify with `git rev-parse origin/cursor/desk-phase-6-java-debug-22b9` before merge) |
+| PR #5 head (`cursor/desk-phase-6-java-debug-22b9`) | `ca09d1aacafceae1d3c9f684a7af7eedc98912a6` (release-closure docs + Phase 6 security) |
 
-### CI (must match **current** head after security commits)
+### CI (matched to **current** heads after security/closure commits)
 
-| PR | Known green run (pre-closure head) | Checks |
-|----|--------------------------------------|--------|
-| #4 | [44930685844](https://github.com/ajaytainwala-dev/desk/actions/runs/44930685844) on `091f7f4` | 18/18 success |
-| #5 | [44932291763](https://github.com/ajaytainwala-dev/desk/actions/runs/44932291763) on `d6824e9` | 22/22 success |
+| PR | Green run on tip | Result |
+|----|------------------|--------|
+| #4 | [44933312307](https://github.com/ajaytainwala-dev/desk/actions/runs/44933312307) on `75a47fa` | **success** (all jobs) |
+| #5 | [44933383020](https://github.com/ajaytainwala-dev/desk/actions/runs/44933383020) on `ca09d1a` | **success** including `Live JDT LS integration` + `JDI debug E2E` |
 
-**After security/docs commits land, re-verify CI on the new SHAs — do not treat the runs above as evidence for newer commits.**
+Historical (pre-closure) greens — not evidence for tips above: #4 [44930685844](https://github.com/ajaytainwala-dev/desk/actions/runs/44930685844) / #5 [44932291763](https://github.com/ajaytainwala-dev/desk/actions/runs/44932291763).
 
 ### Local (Linux agent, release-closure)
 
@@ -212,8 +212,8 @@ See `docs/REMAINING_LIMITATIONS.md`. Highlights: no TUI debug panel; no Spring B
 | `cargo fmt` / `cargo clippy --all-targets -- -D warnings` | PASS |
 | `cargo test` (desk-tui) | 35 passed |
 | `cargo build --release` | SUCCESS |
-| Live `LiveJdtLsIntegrationTest` this closure pass | **Not re-run** in final doc write — last proven on Phase 6 CI `jdtls-it` / prior agent run; disclose as CI-dependent |
-| Windows/macOS interactive TUI | **Not manually tested** here — rely on CI Rust jobs |
+| Live `LiveJdtLsIntegrationTest` | **PASS** via CI job `Live JDT LS integration` on tip `ca09d1a` ([44933383020](https://github.com/ajaytainwala-dev/desk/actions/runs/44933383020)); not re-run interactively in the agent after the docs-only follow-up |
+| Windows/macOS interactive TUI | **Not manually tested** here — rely on CI Rust jobs (green on tip) |
 | GitHub Release `v0.1.0` assets | **Not published** |
 
 ### Mergeability (API, pre-push)
