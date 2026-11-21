@@ -47,6 +47,7 @@ public final class Main {
     registry.register(new RunCommand());
     registry.register(new GitCommand());
     registry.register(new DoctorCommand());
+    registry.register(new DebugCommand());
   }
 
   static int run(CommandRegistry registry, String[] args) {

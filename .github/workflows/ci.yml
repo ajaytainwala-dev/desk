@@ -165,6 +165,55 @@ jobs:
           path: modules/desk-tui/target/release/desk*
           retention-days: 30
 
+  jdtls-it:
+    name: Live JDT LS integration
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Provision pinned JDT LS
+        id: jdtls
+        run: |
+          ROOT="${RUNNER_TEMP}/desk-jdtls"
+          bash .github/scripts/provision-jdtls.sh "$ROOT"
+          echo "launcher=$ROOT/bin/jdtls" >> "$GITHUB_OUTPUT"
+          test -x "$ROOT/bin/jdtls"
+      - name: Run live JDT LS tests (must not skip)
+        env:
+          DESK_JDTLS_CI: "1"
+          DESK_JAVA_LS: ${{ steps.jdtls.outputs.launcher }}
+          DESK_LSP_LOG: "1"
+        run: |
+          bash mvnw -B -pl modules/desk-java -am test -Dtest=LiveJdtLsIntegrationTest
+          # Fail if the live test was skipped despite DESK_JDTLS_CI
+          REPORT=modules/desk-java/target/surefire-reports/desk.java.lsp.LiveJdtLsIntegrationTest.txt
+          test -f "$REPORT"
+          ! grep -q 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 1' "$REPORT"
+          grep -q 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0' "$REPORT"
+
+  jdi-debug-it:
+    name: JDI debug E2E
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Run JDI debugger E2E
+        run: bash mvnw -B -pl modules/desk-java -am test -Dtest=JdiDebuggerE2ETest
+
   package:
     name: Package (jlink portable)
     needs: build
