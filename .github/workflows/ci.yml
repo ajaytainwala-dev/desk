@@ -74,7 +74,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Verify Maven Wrapper
         run: bash mvnw -v
@@ -116,14 +116,14 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Compile with warnings
         run: bash mvnw -B -Pstrict-warnings compile
-      - name: Check dependency vulnerabilities (informational)
+      - name: Dependency inventory (informational)
         run: |
-          echo "Dependency vulnerability scan would run here (requires a configured tool)."
-          echo "This step is a placeholder until a scanning tool is selected."
+          bash mvnw -B -q dependency:tree -Dverbose=false | tee dependency-tree.txt | tail -n 40
+          echo "For vulnerability alerts, enable GitHub Dependabot on this repository."
 
   rust-build:
     name: Build Rust TUI editor
@@ -176,7 +176,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Download packaged CLI JAR
         uses: actions/download-artifact@v4

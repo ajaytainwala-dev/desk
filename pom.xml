@@ -20,7 +20,7 @@
     Combines a terminal editor, Java source formatter, syntax-highlighting
     engine, source analysis, compilation/execution integration, and a CLI.
   </description>
-  <url>https://example.com/desk</url>
+  <url>https://desk.ajaytainwala.dev</url>
 
   <licenses>
     <license>
@@ -51,10 +51,9 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <!-- Java baseline. The environment provides Java 23; the product baseline
-         targets Java 25 LTS once available. Version-specific features are avoided
-         so the code compiles on both. -->
-    <java.version>23</java.version>
+    <!-- Primary LTS baseline: Java 25. Java 26/27 are compatibility targets
+         (non-LTS). Java 29 is the future LTS migration target. -->
+    <java.version>25</java.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
     <maven.compiler.release>${java.version}</maven.compiler.release>

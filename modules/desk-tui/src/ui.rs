@@ -1,6 +1,7 @@
 use crate::app::{App, MenuTab};
 use crate::config::{LineNumberMode, Theme};
-use crate::highlighter::{TokenKind, highlight_lines, style_for_kind};
+use crate::highlighter::{TokenKind, style_for_kind};
+use crate::overlay::Overlay;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -102,6 +103,152 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
     render_toasts(f, app, area, &theme);
     if app.show_help {
         render_help(f, area, &theme);
+    }
+    if app.overlay.is_active() {
+        render_overlay(f, app, area, &theme);
+    }
+}
+
+fn render_overlay(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let width = (area.width * 3 / 4)
+        .max(40)
+        .min(area.width.saturating_sub(2));
+    let height = (area.height / 2).max(8).min(area.height.saturating_sub(2));
+    let popup = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    match &app.overlay {
+        Overlay::Confirm { title, message, .. } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(title.as_str())
+                .border_style(Style::default().fg(theme.warning));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            f.render_widget(
+                Paragraph::new(format!("{}\n\n[Enter] Yes   [Esc] No", message)),
+                inner,
+            );
+        }
+        Overlay::Palette {
+            query,
+            selected,
+            items,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Command Palette  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  {}", item.label, item.hint)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::FuzzyFiles {
+            query,
+            selected,
+            matches,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Go to File  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = matches
+                .iter()
+                .enumerate()
+                .map(|(i, m)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(m.path.display().to_string()).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::FindInFiles {
+            query,
+            selected,
+            matches,
+        } => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Find in Files  >{}<", query));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = matches
+                .iter()
+                .enumerate()
+                .map(|(i, hit)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!(
+                        "{}:{}  {}",
+                        hit.path.display(),
+                        hit.line,
+                        hit.preview
+                    ))
+                    .style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::Completions { items, selected } => {
+            let block = Block::default().borders(Borders::ALL).title("Completions");
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  {}", item.label, item.detail)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::Outline { symbols, selected } => {
+            let block = Block::default().borders(Borders::ALL).title("Outline");
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let list_items: Vec<ListItem> = symbols
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let style = if i == *selected {
+                        Style::default().bg(theme.selection).fg(theme.fg)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("{}  :{}", s.name, s.line)).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(list_items), inner);
+        }
+        Overlay::None => {}
     }
 }
 
@@ -212,7 +359,13 @@ fn render_menu_dropdown(f: &mut Frame, app: &mut App, menu_area: Rect, theme: &T
 
 fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     app.tab_close_positions.clear();
-    if app.current_file.is_none() {
+    // Keep dirty flag for the active tab without cloning the whole buffer each frame.
+    if let Some(tab) = app.tabs.get_mut(app.active_tab) {
+        tab.buffer.modified = app.buffer.modified;
+        tab.path = app.current_file.clone();
+        tab.language = app.language;
+    }
+    if app.tabs.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 " ",
@@ -224,30 +377,47 @@ fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         return;
     }
     let mut spans = Vec::new();
-    let name = app.file_name_or_no_name();
-    let modified = if app.is_modified() { " ●" } else { "" };
-    let tab = format!(" {}{} ", name, modified);
-    let tab_len = tab.chars().count() as u16;
-    let close = " ✕";
-    let close_len = close.chars().count() as u16;
-
-    spans.push(Span::styled(
-        tab,
-        Style::default()
-            .fg(theme.fg)
-            .bg(theme.title_bg)
-            .add_modifier(Modifier::BOLD),
-    ));
-    spans.push(Span::styled(
-        close,
-        Style::default().fg(theme.error).bg(theme.title_bg),
-    ));
-    app.tab_close_positions
-        .push((area.x, area.x + tab_len, area.x + tab_len + close_len, 0));
-    spans.push(Span::styled(
-        " │ ",
-        Style::default().fg(theme.border).bg(theme.title_bg),
-    ));
+    let mut x = area.x;
+    for (idx, tab) in app.tabs.iter().enumerate() {
+        let name = tab
+            .path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let modified = if idx == app.active_tab {
+            if app.is_modified() { " ●" } else { "" }
+        } else if tab.buffer.modified {
+            " ●"
+        } else {
+            ""
+        };
+        let label = format!(" {}{} ", name, modified);
+        let tab_len = label.chars().count() as u16;
+        let close = " ✕";
+        let close_len = close.chars().count() as u16;
+        let active = idx == app.active_tab;
+        let style = if active {
+            Style::default()
+                .fg(theme.fg)
+                .bg(theme.title_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.line_number).bg(theme.title_bg)
+        };
+        spans.push(Span::styled(label, style));
+        spans.push(Span::styled(
+            close,
+            Style::default().fg(theme.error).bg(theme.title_bg),
+        ));
+        app.tab_close_positions
+            .push((x, x + tab_len, x + tab_len + close_len, idx));
+        x = x.saturating_add(tab_len + close_len + 3);
+        spans.push(Span::styled(
+            " │ ",
+            Style::default().fg(theme.border).bg(theme.title_bg),
+        ));
+    }
     spans.push(Span::styled(
         app.cwd.display().to_string(),
         Style::default().fg(theme.line_number).bg(theme.title_bg),
@@ -400,7 +570,22 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     let scroll_top = buffer.scroll_top;
     let scroll_left = buffer.scroll_left;
 
-    let tokens_all = highlight_lines(&buffer.lines, app.language);
+    // Viewport-based highlighting: advance block-comment state through
+    // off-screen lines, then tokenize only visible rows.
+    let visible_end = line_count.min(scroll_top + inner.height as usize + 1);
+    let mut comment_state = false;
+    for line in buffer.lines.iter().take(scroll_top) {
+        let _ =
+            crate::highlighter::highlight_line_with_state(line, app.language, &mut comment_state);
+    }
+    let mut tokens_viewport: Vec<Vec<crate::highlighter::HighlightedToken>> = Vec::new();
+    for line in buffer.lines.iter().take(visible_end).skip(scroll_top) {
+        tokens_viewport.push(crate::highlighter::highlight_line_with_state(
+            line,
+            app.language,
+            &mut comment_state,
+        ));
+    }
     let selection = buffer.selection;
     let bracket = app.bracket_match;
     let wrap = app.config.word_wrap;
@@ -409,19 +594,13 @@ fn render_editor_area(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme, f
     let mut visual_rows: Vec<(Option<usize>, Line<'static>, Style)> = Vec::new();
     let mut cursor_visual_row = 0usize;
 
-    for line_idx in scroll_top..line_count.min(scroll_top + inner.height as usize + 1) {
+    for line_idx in scroll_top..visible_end {
         let line_text = &buffer.lines[line_idx];
-        let cells = build_cells(
-            line_text,
-            tokens_all
-                .get(line_idx)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]),
-            theme,
-            selection,
-            line_idx,
-            bracket,
-        );
+        let tokens = tokens_viewport
+            .get(line_idx - scroll_top)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let cells = build_cells(line_text, tokens, theme, selection, line_idx, bracket);
         let chunks: Vec<&[Cell]> = if wrap {
             cells.chunks(content_width.max(1)).collect()
         } else {

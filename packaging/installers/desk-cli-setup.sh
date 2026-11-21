@@ -56,13 +56,16 @@ if [ -z "$TAG" ]; then
 fi
 echo "Latest release: $TAG"
 
-# Prefer portable zip, then native binary names produced by CI.
+# Prefer platform-specific portable zip, then native binary names produced by CI.
+# Do NOT fall back to desk-portable.zip on macOS — that asset is the Linux jlink alias.
 CANDIDATES=(
   "desk-portable-${PLATFORM}.zip"
-  "desk-portable.zip"
   "desk-native-${PLATFORM}"
-  "desk"
+  "desk-tui-${PLATFORM}"
 )
+if [ "$PLATFORM" = "linux" ]; then
+  CANDIDATES+=("desk-portable.zip" "desk")
+fi
 
 download_asset() {
   local name="$1"

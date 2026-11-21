@@ -1,7 +1,9 @@
 use crate::buffer::{Buffer, Selection};
 use crate::config::{EditorConfig, LineNumberMode, Theme};
 use crate::highlighter::Language;
+use crate::lsp::{LspBridge, LspDiagnostic, LspEvent};
 use crate::mode::Mode;
+use crate::overlay::{self, ConfirmAction, Overlay, default_palette_items, rank_paths};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -10,6 +12,15 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// One editor document tab. The active tab is mirrored in {@code App::buffer}
+/// for compatibility with existing input/render paths.
+#[derive(Debug, Clone)]
+pub struct EditorTab {
+    pub path: Option<PathBuf>,
+    pub buffer: Buffer,
+    pub language: Language,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuTab {
@@ -195,6 +206,14 @@ impl Job {
         if let Ok(mut guard) = self.child.lock()
             && let Some(child) = guard.as_mut()
         {
+            #[cfg(unix)]
+            {
+                let pid = child.id() as i32;
+                // Negative PID targets the process group started via setpgid.
+                unsafe {
+                    libc::kill(-pid, libc::SIGTERM);
+                }
+            }
             let _ = child.kill();
         }
     }
@@ -295,6 +314,9 @@ pub struct App {
     pub cwd: PathBuf,
 
     pub current_file: Option<PathBuf>,
+    /// All open tabs. Index {@code active_tab} matches {@code buffer}/{@code current_file}.
+    pub tabs: Vec<EditorTab>,
+    pub active_tab: usize,
     pub clipboard: String,
 
     pub last_terminal_size: (u16, u16),
@@ -310,6 +332,22 @@ pub struct App {
     pub next_job_id: u64,
     pub bracket_match: Option<(usize, usize)>,
     pub pending_key: Option<char>,
+
+    pub overlay: Overlay,
+    pub lsp: LspBridge,
+    pub problems: Vec<LspDiagnostic>,
+    pub show_problems: bool,
+    pub problems_selected: usize,
+    pub pending_lsp_request: Option<u64>,
+    pub git_branch: String,
+    pub java_status: String,
+    pub project_kind: String,
+    pub hover_text: Option<String>,
+    pub pending_workspace_edit: Option<crate::workspace_edit::WorkspaceEditPlan>,
+    pub pending_code_actions: Vec<crate::lsp::CodeActionEntry>,
+    /// Disk mtime the user already acknowledged (keep memory / suppress re-prompt).
+    pub disk_change_acked: Option<std::time::SystemTime>,
+    pub last_disk_poll: Instant,
 }
 
 impl App {
@@ -347,7 +385,13 @@ impl App {
         let mut explorer_flat = Vec::new();
         Self::collect_nodes(&explorer, 0, &mut explorer_flat);
 
-        Self {
+        let initial_tab = EditorTab {
+            path: current_file.clone(),
+            buffer: buffer.clone(),
+            language,
+        };
+
+        let mut app = Self {
             buffer,
             config,
             mode: Mode::Normal,
@@ -396,8 +440,10 @@ impl App {
             terminal_focused: false,
             terminal_history: Vec::new(),
             terminal_history_index: 0,
-            cwd,
+            cwd: cwd.clone(),
             current_file,
+            tabs: vec![initial_tab],
+            active_tab: 0,
             clipboard: String::new(),
             last_terminal_size: (80, 24),
             status_message: "Ready — F1 help | Ctrl+F find | F9 format | F5 run | Ctrl+J terminal"
@@ -412,7 +458,128 @@ impl App {
             next_job_id: 1,
             bracket_match: None,
             pending_key: None,
+            overlay: Overlay::None,
+            lsp: LspBridge::start(&cwd),
+            problems: Vec::new(),
+            show_problems: false,
+            problems_selected: 0,
+            pending_lsp_request: None,
+            git_branch: detect_git_branch(&cwd),
+            java_status: "Java ?".into(),
+            project_kind: detect_project_kind(&cwd),
+            hover_text: None,
+            pending_workspace_edit: None,
+            pending_code_actions: Vec::new(),
+            disk_change_acked: None,
+            last_disk_poll: Instant::now(),
+        };
+        if initial_path.is_none() {
+            app.restore_session_if_present();
         }
+        if let Some(path) = app.current_file.clone() {
+            let text = app.buffer.text();
+            app.lsp.did_open(&path, language_id(app.language), &text);
+        }
+        app
+    }
+
+    /// Restore open tabs from {@code .desk/session.json} when present.
+    pub fn restore_session_if_present(&mut self) {
+        let session = self.cwd.join(".desk").join("session.json");
+        let Ok(text) = fs::read_to_string(&session) else {
+            return;
+        };
+        let mut restored = 0usize;
+        // Minimal parse of openDocuments[].path without a JSON crate.
+        for segment in text.split("\"path\"") {
+            let Some(rest) = segment.strip_prefix(':') else {
+                continue;
+            };
+            let rest = rest.trim_start();
+            let Some(rest) = rest.strip_prefix('"') else {
+                continue;
+            };
+            let Some(end) = rest.find('"') else {
+                continue;
+            };
+            let path = PathBuf::from(&rest[..end]);
+            if path.is_file() {
+                if let Err(e) = self.open_file(&path) {
+                    self.toast(
+                        &format!("Session restore skipped {}: {}", path.display(), e),
+                        "WARN",
+                    );
+                } else {
+                    restored += 1;
+                }
+            }
+        }
+        if restored > 0 {
+            self.toast(
+                &format!("Restored {} tab(s) from session", restored),
+                "INFO",
+            );
+        }
+    }
+
+    /// Persist the live buffer into the active tab slot.
+    pub fn sync_active_tab(&mut self) {
+        if self.tabs.is_empty() {
+            self.tabs.push(EditorTab {
+                path: self.current_file.clone(),
+                buffer: self.buffer.clone(),
+                language: self.language,
+            });
+            self.active_tab = 0;
+            return;
+        }
+        if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len() - 1;
+        }
+        self.tabs[self.active_tab] = EditorTab {
+            path: self.current_file.clone(),
+            buffer: self.buffer.clone(),
+            language: self.language,
+        };
+    }
+
+    pub fn activate_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        self.sync_active_tab();
+        self.active_tab = index;
+        let tab = &self.tabs[index];
+        self.buffer = tab.buffer.clone();
+        self.current_file = tab.path.clone();
+        self.language = tab.language;
+        self.mode = Mode::Normal;
+        self.bracket_match = None;
+        self.pending_key = None;
+        self.explorer_focused = false;
+        self.terminal_focused = false;
+        self.disk_change_acked = None;
+        self.check_external_file_state();
+    }
+
+    pub fn next_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let next = (self.active_tab + 1) % self.tabs.len();
+        self.activate_tab(next);
+    }
+
+    pub fn prev_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let prev = if self.active_tab == 0 {
+            self.tabs.len() - 1
+        } else {
+            self.active_tab - 1
+        };
+        self.activate_tab(prev);
     }
 
     fn apply_config(config: &EditorConfig, buffer: &mut Buffer) {
@@ -575,24 +742,75 @@ impl App {
     }
 
     pub fn open_file(&mut self, path: &Path) -> Result<(), std::io::Error> {
+        self.open_file_with_options(path, false)
+    }
+
+    /// Open a file. When {@code force_reload} is false and the path is already
+    /// open, switch to that tab without discarding unsaved edits.
+    pub fn open_file_with_options(
+        &mut self,
+        path: &Path,
+        force_reload: bool,
+    ) -> Result<(), std::io::Error> {
+        let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let existing = self.tabs.iter().position(|t| {
+            t.path.as_ref().is_some_and(|p| {
+                fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical || p == &canonical
+            })
+        });
+
+        if let Some(idx) = existing {
+            if !force_reload {
+                self.activate_tab(idx);
+                self.toast(&format!("Switched to {}", path.display()), "INFO");
+                return Ok(());
+            }
+            if self.tabs[idx].buffer.modified || (idx == self.active_tab && self.buffer.modified) {
+                self.toast("Unsaved changes — save before reloading", "WARN");
+                return Ok(());
+            }
+        }
+
         let mut buffer = Buffer::from_file(path)?;
         Self::apply_config(&self.config, &mut buffer);
+        buffer.cursor = Default::default();
+        buffer.selection = None;
+        buffer.scroll_top = 0;
+        buffer.scroll_left = 0;
+        buffer.end_edit_group();
+        let language = Language::from_path(Some(path));
+
+        if let Some(idx) = existing {
+            self.tabs[idx] = EditorTab {
+                path: Some(canonical.clone()),
+                buffer: buffer.clone(),
+                language,
+            };
+            self.active_tab = idx;
+            self.toast(&format!("Reloaded {}", path.display()), "INFO");
+        } else {
+            self.sync_active_tab();
+            self.tabs.push(EditorTab {
+                path: Some(canonical.clone()),
+                buffer: buffer.clone(),
+                language,
+            });
+            self.active_tab = self.tabs.len() - 1;
+            self.toast(&format!("Opened {}", path.display()), "INFO");
+        }
+
         self.buffer = buffer;
-        self.buffer.cursor = Default::default();
-        self.buffer.selection = None;
-        self.buffer.scroll_top = 0;
-        self.buffer.scroll_left = 0;
-        self.language = Language::from_path(Some(path));
-        self.current_file = Some(path.to_path_buf());
+        self.language = language;
+        self.current_file = Some(canonical.clone());
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
         self.explorer_focused = false;
         self.terminal_focused = false;
         self.last_edit_time = Instant::now();
-        self.buffer.end_edit_group();
-        self.toast(&format!("Opened {}", path.display()), "INFO");
         self.refresh_explorer();
+        self.lsp
+            .did_open(&canonical, language_id(language), &self.buffer.text());
         Ok(())
     }
 
@@ -611,13 +829,22 @@ impl App {
     }
 
     pub fn new_file(&mut self, name: Option<&str>) {
-        self.buffer = Buffer::new_empty();
+        self.sync_active_tab();
+        let mut buffer = Buffer::new_empty();
         if let Some(name) = name.filter(|n| !n.is_empty()) {
-            self.buffer.path = Some(PathBuf::from(name));
+            buffer.path = Some(PathBuf::from(name));
         }
-        Self::apply_config(&self.config, &mut self.buffer);
+        Self::apply_config(&self.config, &mut buffer);
+        let language = Language::from_path(buffer.path.as_deref());
+        self.tabs.push(EditorTab {
+            path: buffer.path.clone(),
+            buffer: buffer.clone(),
+            language,
+        });
+        self.active_tab = self.tabs.len() - 1;
+        self.buffer = buffer;
         self.current_file = self.buffer.path.clone();
-        self.language = Language::from_path(self.current_file.as_deref());
+        self.language = language;
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
@@ -625,11 +852,54 @@ impl App {
         self.toast("New file", "INFO");
     }
 
+    pub fn request_close_current_file(&mut self) {
+        self.sync_active_tab();
+        if self.buffer.modified {
+            self.overlay = Overlay::Confirm {
+                title: "Unsaved changes".into(),
+                message: "Close tab and discard unsaved edits?".into(),
+                action: ConfirmAction::CloseTab,
+            };
+            return;
+        }
+        self.close_current_file_forced();
+    }
+
     pub fn close_current_file(&mut self) {
-        self.buffer = Buffer::new_empty();
-        Self::apply_config(&self.config, &mut self.buffer);
-        self.current_file = None;
-        self.language = Language::Generic;
+        self.request_close_current_file();
+    }
+
+    pub fn close_current_file_forced(&mut self) {
+        self.sync_active_tab();
+        if self.tabs.is_empty() {
+            return;
+        }
+        if let Some(path) = self.current_file.clone() {
+            // Notify LSP of close when available.
+            let _ = path;
+        }
+        let closing = self.active_tab.min(self.tabs.len() - 1);
+        self.tabs.remove(closing);
+        if self.tabs.is_empty() {
+            let mut buffer = Buffer::new_empty();
+            Self::apply_config(&self.config, &mut buffer);
+            self.tabs.push(EditorTab {
+                path: None,
+                buffer: buffer.clone(),
+                language: Language::Generic,
+            });
+            self.active_tab = 0;
+            self.buffer = buffer;
+            self.current_file = None;
+            self.language = Language::Generic;
+        } else {
+            let next = closing.min(self.tabs.len() - 1);
+            self.active_tab = next;
+            let tab = &self.tabs[next];
+            self.buffer = tab.buffer.clone();
+            self.current_file = tab.path.clone();
+            self.language = tab.language;
+        }
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
@@ -640,6 +910,61 @@ impl App {
         self.pending_run = None;
         self.tab_close_positions.clear();
         self.toast("Closed file", "INFO");
+    }
+
+    pub fn close_other_tabs(&mut self) {
+        self.sync_active_tab();
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let keep = self.tabs[self.active_tab].clone();
+        self.tabs.clear();
+        self.tabs.push(keep);
+        self.active_tab = 0;
+        self.toast("Closed other tabs", "INFO");
+    }
+
+    pub fn save_all_tabs(&mut self) -> Result<(), std::io::Error> {
+        self.sync_active_tab();
+        let mut skipped_untitled = 0usize;
+        for tab in &mut self.tabs {
+            if let Some(path) = tab.path.clone() {
+                if tab.buffer.disk_changed_externally() {
+                    return Err(std::io::Error::other(format!(
+                        "File changed on disk: {} — save individually after reviewing",
+                        path.display()
+                    )));
+                }
+                tab.buffer.save_as(&path)?;
+            } else if tab.buffer.modified {
+                skipped_untitled += 1;
+            }
+        }
+        if let Some(path) = self.current_file.clone() {
+            if self.buffer.disk_changed_externally() {
+                self.overlay = Overlay::Confirm {
+                    title: "File changed on disk".into(),
+                    message: format!("Overwrite {} anyway?", path.display()),
+                    action: ConfirmAction::SaveOverwriteConflict,
+                };
+                return Ok(());
+            }
+            self.buffer.save_as(&path)?;
+        } else if self.buffer.modified {
+            skipped_untitled += 1;
+        }
+        if skipped_untitled > 0 {
+            self.toast(
+                &format!(
+                    "Saved named tabs; {} untitled buffer(s) still need Save As",
+                    skipped_untitled
+                ),
+                "WARN",
+            );
+        } else {
+            self.toast("Saved all", "SUCCESS");
+        }
+        Ok(())
     }
 
     pub fn save_current(&mut self) -> Result<(), std::io::Error> {
@@ -660,6 +985,16 @@ impl App {
         {
             fs::create_dir_all(parent)?;
         }
+        if self.buffer.path.as_ref().is_some_and(|p| p == path)
+            && self.buffer.disk_changed_externally()
+        {
+            self.overlay = Overlay::Confirm {
+                title: "File changed on disk".into(),
+                message: format!("Overwrite {} anyway?", path.display()),
+                action: ConfirmAction::SaveOverwriteConflict,
+            };
+            return Ok(());
+        }
         if let Err(e) = self.buffer.save_as(path) {
             let kind = e.kind();
             let backup_name = path
@@ -678,6 +1013,7 @@ impl App {
         self.current_file = Some(path.to_path_buf());
         self.language = Language::from_path(Some(path));
         self.last_edit_time = Instant::now();
+        self.sync_active_tab();
         self.refresh_explorer();
         self.toast(&format!("Saved {}", path.display()), "SUCCESS");
         Ok(())
@@ -718,7 +1054,6 @@ impl App {
     }
 
     pub fn status_line(&self) -> String {
-        let modified = if self.buffer.modified { "+" } else { "" };
         let sel = match self.buffer.selection {
             Some(s) if !s.is_empty() => {
                 let (sl, sc, el, ec) = s.normalized();
@@ -741,21 +1076,30 @@ impl App {
             }
             _ => String::new(),
         };
+        let errs = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "ERROR")
+            .count();
+        let warns = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "WARNING")
+            .count();
         format!(
-            " {} | {} | {} | Ln {}, Col {}{}{} | {} | {} | utf-8{}",
+            " {}{} | {} | {} | {} | E:{} W:{} | Ln {}, Col {}{} | {} | {}{}",
             self.file_name_or_no_name(),
-            self.language.display_name(),
-            if self.buffer.modified {
-                "UNSAVED"
-            } else {
-                "SAVED"
-            },
+            if self.buffer.modified { " ●" } else { "" },
+            self.project_kind,
+            self.git_branch,
+            self.lsp.status,
+            errs,
+            warns,
             self.current_line_index() + 1,
             self.current_column() + 1,
-            modified,
             sel,
             self.mode.name(),
-            self.config.theme,
+            self.language.display_name(),
             job
         )
     }
@@ -779,6 +1123,11 @@ impl App {
 
     pub fn tick(&mut self) {
         self.poll_job();
+        self.poll_lsp();
+        if self.last_disk_poll.elapsed() >= Duration::from_secs(2) {
+            self.last_disk_poll = Instant::now();
+            self.check_external_file_state();
+        }
         if !self.config.auto_save || !self.buffer.modified || self.buffer.path.is_none() {
             return;
         }
@@ -1177,12 +1526,19 @@ impl App {
             self.toast("A command is already running — stop it first (F7)", "WARN");
             return Ok(());
         }
-        let mut child = Command::new(program)
-            .args(args)
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .current_dir(&self.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // Own process group so stop_job can signal the whole tree (mvn/gradle children).
+            cmd.process_group(0);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", program, e)))?;
         let stdin = child.stdin.take();
@@ -1891,13 +2247,42 @@ impl App {
                 }
                 self.running = false;
             }
-            "q" | "quit" => self.running = false,
+            "q" | "quit" => self.request_quit(),
             "q!" => {
                 self.buffer.modified = false;
+                for tab in &mut self.tabs {
+                    tab.buffer.modified = false;
+                }
+                self.persist_session();
+                self.lsp.shutdown();
                 self.running = false;
             }
             "e" | "edit" => {
-                if let Err(e) = self.open_file(Path::new(rest)) {
+                if let Err(e) = self.open_file_with_options(Path::new(rest), true) {
+                    self.toast(&format!("Open failed: {}", e), "ERROR");
+                }
+            }
+            "e!" => {
+                // Force reload, discarding unsaved edits for the target path.
+                let path = Path::new(rest);
+                let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                if let Some(idx) = self.tabs.iter().position(|t| {
+                    t.path.as_ref().is_some_and(|p| {
+                        fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical
+                    })
+                }) {
+                    self.tabs[idx].buffer.modified = false;
+                    if idx == self.active_tab {
+                        self.buffer.modified = false;
+                    }
+                } else if self
+                    .current_file
+                    .as_ref()
+                    .is_some_and(|p| fs::canonicalize(p).unwrap_or_else(|_| p.clone()) == canonical)
+                {
+                    self.buffer.modified = false;
+                }
+                if let Err(e) = self.open_file_with_options(path, true) {
                     self.toast(&format!("Open failed: {}", e), "ERROR");
                 }
             }
@@ -2000,8 +2385,27 @@ impl App {
                 }
             }
             "compile" | "make" => self.compile_current_file(),
+            "build" => self.build_workspace(),
             "check" | "lint" => self.check_current_java(),
-            "fmt" | "format" => self.format_current(),
+            "fmt" | "format" => self.request_lsp_format(),
+            "rename" => self.execute_rename(rest),
+            "codeaction" | "fix" => {
+                if let Ok(n) = rest.parse::<usize>() {
+                    if let Some(action) =
+                        self.pending_code_actions.get(n.saturating_sub(1)).cloned()
+                    {
+                        if let Some(plan) = action.plan {
+                            self.prompt_workspace_edit("codeAction", plan);
+                        } else {
+                            self.toast("Action has no workspace edit", "WARN");
+                        }
+                    } else {
+                        self.toast("Unknown code action index", "WARN");
+                    }
+                } else {
+                    self.request_code_actions();
+                }
+            }
             "run" => self.run_current_file(),
             "stop" => self.stop_job(),
             "clear" | "cl" => self.clear_output(),
@@ -2019,9 +2423,49 @@ impl App {
                 }
             }
             "pwd" => self.toast(&self.cwd.display().to_string(), "INFO"),
+            "mkdir" => {
+                if rest.is_empty() {
+                    self.toast("Usage: :mkdir <name>", "WARN");
+                } else {
+                    let path = self.cwd.join(rest);
+                    match fs::create_dir_all(&path) {
+                        Ok(()) => {
+                            self.refresh_explorer();
+                            self.toast(&format!("Created {}", path.display()), "SUCCESS");
+                        }
+                        Err(e) => self.toast(&format!("mkdir failed: {}", e), "ERROR"),
+                    }
+                }
+            }
+            "mv" => {
+                let parts: Vec<&str> = rest.split_whitespace().collect();
+                if parts.len() != 2 {
+                    self.toast("Usage: :mv <from> <to>", "WARN");
+                } else {
+                    let from = PathBuf::from(parts[0]);
+                    let to = PathBuf::from(parts[1]);
+                    match fs::rename(&from, &to) {
+                        Ok(()) => {
+                            self.refresh_explorer();
+                            self.toast("Renamed", "SUCCESS");
+                        }
+                        Err(e) => self.toast(&format!("rename failed: {}", e), "ERROR"),
+                    }
+                }
+            }
             "help" => self.show_help = !self.show_help,
             "reload" => self.reload_config(),
-            _ => self.toast(&format!("Unknown command: :{}", cmd), "WARN"),
+            _ => {
+                // Go-to-line: bare number after :
+                if let Ok(line) = head.parse::<usize>() {
+                    if line > 0 {
+                        self.buffer.cursor.line = line - 1;
+                        self.buffer.cursor.col = 0;
+                    }
+                } else {
+                    self.toast(&format!("Unknown command: :{}", cmd), "WARN");
+                }
+            }
         }
     }
 
@@ -2076,6 +2520,866 @@ impl App {
         self.explorer_focused = self.show_explorer;
         self.terminal_focused = false;
     }
+
+    pub fn request_quit(&mut self) {
+        self.sync_active_tab();
+        if self.tabs.iter().any(|t| t.buffer.modified) || self.buffer.modified {
+            self.overlay = Overlay::Confirm {
+                title: "Unsaved changes".into(),
+                message: "Quit and discard unsaved edits?".into(),
+                action: ConfirmAction::Quit,
+            };
+            return;
+        }
+        self.persist_session();
+        self.lsp.shutdown();
+        self.running = false;
+    }
+
+    pub fn confirm_yes(&mut self) {
+        let action = match &self.overlay {
+            Overlay::Confirm { action, .. } => *action,
+            _ => {
+                self.overlay.close();
+                return;
+            }
+        };
+        self.overlay.close();
+        match action {
+            ConfirmAction::CloseTab => self.close_current_file_forced(),
+            ConfirmAction::Quit => {
+                for tab in &mut self.tabs {
+                    tab.buffer.modified = false;
+                }
+                self.buffer.modified = false;
+                self.persist_session();
+                self.lsp.shutdown();
+                self.running = false;
+            }
+            ConfirmAction::ReloadConflict => {
+                if let Some(path) = self.current_file.clone() {
+                    let _ = self.open_file_with_options(&path, true);
+                    self.disk_change_acked = None;
+                }
+            }
+            ConfirmAction::DiskDeleted => {
+                self.close_current_file_forced();
+                self.disk_change_acked = None;
+            }
+            ConfirmAction::SaveOverwriteConflict => {
+                if let Some(path) = self.current_file.clone() {
+                    let _ = self.buffer.save_as(&path);
+                    self.sync_active_tab();
+                    self.toast("Saved (overwrote disk changes)", "WARN");
+                }
+            }
+            ConfirmAction::DeletePath => {
+                if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected).cloned() {
+                    let _ = if path.is_dir() {
+                        fs::remove_dir_all(&path)
+                    } else {
+                        fs::remove_file(&path)
+                    };
+                    self.refresh_explorer();
+                    self.toast(&format!("Deleted {}", path.display()), "INFO");
+                }
+            }
+            ConfirmAction::ApplyWorkspaceEdit => {
+                if let Some(plan) = self.pending_workspace_edit.take() {
+                    self.apply_workspace_edit_plan(plan);
+                }
+            }
+        }
+    }
+
+    pub fn apply_workspace_edit_plan(&mut self, plan: crate::workspace_edit::WorkspaceEditPlan) {
+        use crate::workspace_edit::{
+            apply_edits_to_lines, apply_file_on_disk, filter_plan_to_workspace,
+        };
+        self.sync_active_tab();
+        let (plan, rejected) = filter_plan_to_workspace(&self.cwd, plan);
+        if !rejected.is_empty() {
+            self.toast(
+                &format!("Rejected {} path(s) outside workspace", rejected.len()),
+                "WARN",
+            );
+        }
+        if plan.is_empty() {
+            self.toast("No in-workspace edits to apply", "WARN");
+            return;
+        }
+        for file in &plan.files {
+            let open_idx = self.tabs.iter().position(|t| {
+                t.path.as_ref().is_some_and(|p| {
+                    fs::canonicalize(p).unwrap_or_else(|_| p.clone())
+                        == fs::canonicalize(&file.path).unwrap_or_else(|_| file.path.clone())
+                })
+            });
+            if let Some(idx) = open_idx {
+                apply_edits_to_lines(&mut self.tabs[idx].buffer.lines, &file.edits);
+                self.tabs[idx].buffer.modified = true;
+                if idx == self.active_tab {
+                    self.buffer.lines = self.tabs[idx].buffer.lines.clone();
+                    self.buffer.modified = true;
+                }
+            } else if let Err(e) = apply_file_on_disk(&file.path, &file.edits) {
+                self.toast(
+                    &format!("Edit failed for {}: {}", file.path.display(), e),
+                    "ERROR",
+                );
+            }
+        }
+        self.toast(&format!("Applied {}", plan.summary()), "SUCCESS");
+        self.refresh_explorer();
+    }
+
+    pub fn prompt_workspace_edit(
+        &mut self,
+        kind: &str,
+        plan: crate::workspace_edit::WorkspaceEditPlan,
+    ) {
+        use crate::workspace_edit::filter_plan_to_workspace;
+        let (plan, rejected) = filter_plan_to_workspace(&self.cwd, plan);
+        if !rejected.is_empty() {
+            self.toast(
+                &format!(
+                    "Ignoring {} edit target(s) outside workspace",
+                    rejected.len()
+                ),
+                "WARN",
+            );
+        }
+        if plan.is_empty() {
+            self.toast(&format!("No in-workspace edits from {}", kind), "INFO");
+            return;
+        }
+        self.pending_workspace_edit = Some(plan.clone());
+        let paths: Vec<String> = plan
+            .files
+            .iter()
+            .take(5)
+            .map(|f| f.path.display().to_string())
+            .collect();
+        let more = if plan.files.len() > 5 {
+            format!(" (+{} more)", plan.files.len() - 5)
+        } else {
+            String::new()
+        };
+        self.overlay = Overlay::Confirm {
+            title: format!("Apply {} edits?", kind),
+            message: format!("{} — {}\n{}", plan.summary(), paths.join(", "), more),
+            action: ConfirmAction::ApplyWorkspaceEdit,
+        };
+    }
+
+    pub fn request_rename_symbol(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            self.toast("No file open", "WARN");
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        let word = self.buffer.word_at_cursor();
+        if word.is_empty() {
+            self.toast("No symbol under cursor", "WARN");
+            return;
+        }
+        self.show_command_line = true;
+        self.command_line = format!(":rename {}", word);
+        self.toast("Edit new name after :rename and press Enter", "INFO");
+        let _ = path;
+    }
+
+    pub fn execute_rename(&mut self, new_name: &str) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if new_name.is_empty() {
+            self.toast("Usage: :rename <newName>", "WARN");
+            return;
+        }
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) = self.lsp.request_rename(
+            &path,
+            self.buffer.cursor.line,
+            self.buffer.cursor.col,
+            new_name,
+        ) {
+            self.pending_lsp_request = Some(id);
+            self.toast("Renaming…", "INFO");
+        }
+    }
+
+    pub fn request_lsp_format(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            self.format_current();
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) = self.lsp.request_format(&path) {
+            self.pending_lsp_request = Some(id);
+            self.toast("Formatting via LSP…", "INFO");
+        }
+    }
+
+    pub fn request_code_actions(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_code_action(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn build_workspace(&mut self) {
+        self.show_output = true;
+        self.show_terminal = false;
+        if let Some(jar) = Self::find_desk_jar() {
+            let java = Self::java_tool("java");
+            let args = vec![
+                "-jar".to_string(),
+                jar.display().to_string(),
+                "build".to_string(),
+            ];
+            if let Err(e) = self.spawn_job("desk build".into(), &java, &args) {
+                self.toast(&format!("Build failed to start: {}", e), "ERROR");
+            } else {
+                self.push_output("Building… Esc or F7 to cancel", OutputKind::Info);
+            }
+        } else {
+            self.compile_current_file();
+        }
+    }
+
+    pub fn confirm_no(&mut self) {
+        if let Overlay::Confirm { action, .. } = &self.overlay {
+            match action {
+                ConfirmAction::ReloadConflict | ConfirmAction::DiskDeleted => {
+                    // Keep in-memory; suppress re-prompt until disk changes again.
+                    // Missing file: UNIX_EPOCH sentinel suppresses re-prompt until path returns.
+                    self.disk_change_acked = self
+                        .buffer
+                        .current_disk_mtime()
+                        .or(Some(std::time::SystemTime::UNIX_EPOCH));
+                }
+                _ => {}
+            }
+        }
+        self.overlay.close();
+    }
+
+    /// Detect external disk changes / deletions without busy-polling.
+    pub fn check_external_file_state(&mut self) {
+        if matches!(
+            self.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::ReloadConflict | ConfirmAction::DiskDeleted,
+                ..
+            }
+        ) {
+            return;
+        }
+        if !matches!(self.overlay, Overlay::None) {
+            return;
+        }
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if self.buffer.disk_missing() {
+            let ack_missing = self.disk_change_acked == Some(std::time::SystemTime::UNIX_EPOCH);
+            if ack_missing {
+                return;
+            }
+            self.overlay = Overlay::Confirm {
+                title: "File deleted on disk".into(),
+                message: format!(
+                    "{} no longer exists. Close tab (Yes) or keep buffer (No)?",
+                    path.display()
+                ),
+                action: ConfirmAction::DiskDeleted,
+            };
+            return;
+        }
+        if !self.buffer.disk_changed_externally() {
+            return;
+        }
+        let Some(current) = self.buffer.current_disk_mtime() else {
+            return;
+        };
+        if self.disk_change_acked == Some(current) {
+            return;
+        }
+        let dirty = if self.buffer.modified {
+            "unsaved edits"
+        } else {
+            "clean buffer"
+        };
+        self.overlay = Overlay::Confirm {
+            title: "File changed on disk".into(),
+            message: format!(
+                "{} changed externally ({}). Reload from disk (Yes) or keep memory (No)?",
+                path.display(),
+                dirty
+            ),
+            action: ConfirmAction::ReloadConflict,
+        };
+    }
+
+    pub fn open_palette(&mut self) {
+        self.overlay = Overlay::Palette {
+            query: String::new(),
+            selected: 0,
+            items: default_palette_items(),
+        };
+    }
+
+    pub fn open_fuzzy_files(&mut self) {
+        let paths = collect_workspace_files(&self.cwd, 2000);
+        let matches = rank_paths("", &paths, 100);
+        self.overlay = Overlay::FuzzyFiles {
+            query: String::new(),
+            selected: 0,
+            matches,
+        };
+    }
+
+    pub fn open_find_in_files(&mut self) {
+        self.overlay = Overlay::FindInFiles {
+            query: String::new(),
+            selected: 0,
+            matches: Vec::new(),
+        };
+    }
+
+    pub fn run_palette_item(&mut self, id: &str) {
+        self.overlay.close();
+        match id {
+            "save" => {
+                let _ = self.save_current();
+            }
+            "save_all" => {
+                let _ = self.save_all_tabs();
+            }
+            "fuzzy" => self.open_fuzzy_files(),
+            "find_in_files" => self.open_find_in_files(),
+            "goto_line" => {
+                self.show_command_line = true;
+                self.command_line = ":".to_string();
+                self.toast("Type line number after : and Enter", "INFO");
+            }
+            "outline" => self.request_outline(),
+            "problems" => {
+                self.show_problems = !self.show_problems;
+                if self.show_problems {
+                    self.show_output = true;
+                }
+            }
+            "complete" => self.trigger_completion(),
+            "definition" => self.goto_definition(),
+            "references" => self.find_references(),
+            "hover" => self.show_hover(),
+            "format" => self.format_current(),
+            "build" | "compile" => self.build_workspace(),
+            "run" => self.run_current_file(),
+            "rename" => self.request_rename_symbol(),
+            "code_action" => self.request_code_actions(),
+            "explorer_new_file" => self.explorer_new_file(),
+            "explorer_new_dir" => self.explorer_new_dir(),
+            "explorer_rename" => self.explorer_rename(),
+            "explorer_delete" => self.explorer_delete(),
+            "quit" => self.request_quit(),
+            _ => self.toast(&format!("Unknown action: {}", id), "WARN"),
+        }
+    }
+
+    pub fn trigger_completion(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            self.toast("No file open", "WARN");
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_complete(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+            self.toast("Requesting completions…", "INFO");
+        }
+    }
+
+    pub fn goto_definition(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_definition(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn find_references(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_references(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn show_hover(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_hover(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn request_outline(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            // Local outline fallback: scan class/method keywords
+            let symbols = local_java_outline(&self.buffer.lines);
+            self.overlay = Overlay::Outline {
+                symbols,
+                selected: 0,
+            };
+            return;
+        }
+        if let Some(id) = self.lsp.request_symbols(&path) {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn poll_lsp(&mut self) {
+        for ev in self.lsp.poll_events() {
+            match ev {
+                LspEvent::Diagnostics { path, items } => {
+                    self.problems.retain(|d| d.path != path);
+                    self.problems.extend(items);
+                    self.problems.sort_by(|a, b| {
+                        (&a.path, a.line, a.column).cmp(&(&b.path, b.line, b.column))
+                    });
+                }
+                LspEvent::Completions { request_id, items } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if items.is_empty() {
+                            self.toast("No completions", "INFO");
+                        } else {
+                            self.overlay = Overlay::Completions { items, selected: 0 };
+                        }
+                    }
+                }
+                LspEvent::Hover {
+                    request_id,
+                    contents,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if contents.is_empty() {
+                            self.toast("No hover info", "INFO");
+                        } else {
+                            self.hover_text = Some(contents.clone());
+                            self.toast(&contents.chars().take(80).collect::<String>(), "INFO");
+                        }
+                    }
+                }
+                LspEvent::Locations {
+                    request_id,
+                    kind,
+                    items,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if items.is_empty() {
+                            self.toast(&format!("No {}", kind), "INFO");
+                        } else {
+                            let loc = &items[0];
+                            let _ = self.open_file(&loc.path);
+                            self.buffer.cursor.line = loc.line.saturating_sub(1);
+                            self.buffer.cursor.col = loc.column.saturating_sub(1);
+                            if items.len() > 1 {
+                                self.show_output = true;
+                                for item in &items {
+                                    self.push_output(
+                                        &format!(
+                                            "{}:{}:{}",
+                                            item.path.display(),
+                                            item.line,
+                                            item.column
+                                        ),
+                                        OutputKind::Info,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                LspEvent::Symbols { request_id, items } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        self.overlay = Overlay::Outline {
+                            symbols: items,
+                            selected: 0,
+                        };
+                    }
+                }
+                LspEvent::WorkspaceEdit {
+                    request_id,
+                    kind,
+                    plan,
+                } => {
+                    if request_id == 0 || self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        self.prompt_workspace_edit(&kind, plan);
+                    }
+                }
+                LspEvent::Formatted { request_id, edits } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if edits.is_empty() {
+                            self.toast("Already formatted", "INFO");
+                        } else {
+                            crate::workspace_edit::apply_edits_to_lines(
+                                &mut self.buffer.lines,
+                                &edits,
+                            );
+                            self.buffer.modified = true;
+                            self.sync_active_tab();
+                            self.toast("Formatted", "SUCCESS");
+                        }
+                    }
+                }
+                LspEvent::CodeActions {
+                    request_id,
+                    actions,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if actions.is_empty() {
+                            self.toast("No code actions", "INFO");
+                        } else {
+                            self.pending_code_actions = actions.clone();
+                            // Present as palette-like outline using first action confirm
+                            let labels: Vec<_> = actions.iter().map(|a| a.title.clone()).collect();
+                            self.toast(
+                                &format!(
+                                    "{} action(s). :codeaction <n> to apply (1-based)",
+                                    labels.len()
+                                ),
+                                "INFO",
+                            );
+                            for (i, a) in actions.iter().enumerate() {
+                                self.push_output(
+                                    &format!("[{}] {} ({})", i + 1, a.title, a.kind),
+                                    OutputKind::Info,
+                                );
+                            }
+                            self.show_output = true;
+                        }
+                    }
+                }
+                LspEvent::SignatureHelp { request_id, label } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if label.is_empty() {
+                            self.toast("No signature help", "INFO");
+                        } else {
+                            self.toast(&label, "INFO");
+                        }
+                    }
+                }
+                LspEvent::Ready { .. } | LspEvent::Unavailable { .. } | LspEvent::Crashed => {}
+                LspEvent::Error { message } => self.toast(&message, "ERROR"),
+            }
+        }
+    }
+
+    pub fn persist_session(&self) {
+        let desk = self.cwd.join(".desk");
+        let _ = fs::create_dir_all(&desk);
+        let mut paths = Vec::new();
+        for tab in &self.tabs {
+            if let Some(p) = &tab.path {
+                paths.push(format!(
+                    "{{\"path\":\"{}\"}}",
+                    p.display()
+                        .to_string()
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                ));
+            }
+        }
+        let body = format!(
+            "{{\n  \"openDocuments\": [\n    {}\n  ]\n}}\n",
+            paths.join(",\n    ")
+        );
+        let _ = fs::write(desk.join("session.json"), body);
+    }
+
+    pub fn jump_to_problem(&mut self, index: usize) {
+        if let Some(diag) = self.problems.get(index).cloned() {
+            let _ = self.open_file(&diag.path);
+            self.buffer.cursor.line = diag.line.saturating_sub(1);
+            self.buffer.cursor.col = diag.column.saturating_sub(1);
+            self.problems_selected = index;
+        }
+    }
+
+    pub fn next_problem(&mut self) {
+        if self.problems.is_empty() {
+            return;
+        }
+        self.problems_selected = (self.problems_selected + 1) % self.problems.len();
+        self.jump_to_problem(self.problems_selected);
+    }
+
+    pub fn prev_problem(&mut self) {
+        if self.problems.is_empty() {
+            return;
+        }
+        if self.problems_selected == 0 {
+            self.problems_selected = self.problems.len() - 1;
+        } else {
+            self.problems_selected -= 1;
+        }
+        self.jump_to_problem(self.problems_selected);
+    }
+
+    pub fn explorer_new_file(&mut self) {
+        self.show_command_line = true;
+        self.command_line = ":new ".to_string();
+        self.toast("Enter new file name", "INFO");
+    }
+
+    pub fn explorer_new_dir(&mut self) {
+        self.show_command_line = true;
+        self.command_line = ":mkdir ".to_string();
+        self.toast("Enter new folder name", "INFO");
+    }
+
+    pub fn explorer_rename(&mut self) {
+        if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected) {
+            self.show_command_line = true;
+            self.command_line = format!(":mv {} ", path.display());
+        }
+    }
+
+    pub fn explorer_delete(&mut self) {
+        if let Some((path, _)) = self.explorer_flat.get(self.explorer_selected) {
+            self.overlay = Overlay::Confirm {
+                title: "Delete".into(),
+                message: format!("Delete {}?", path.display()),
+                action: ConfirmAction::DeletePath,
+            };
+        }
+    }
+
+    pub fn apply_completion(&mut self, insert: &str) {
+        for ch in insert.chars() {
+            if ch == '\n' {
+                self.buffer.insert_newline();
+            } else {
+                self.buffer.insert_char(ch);
+            }
+        }
+        self.overlay.close();
+        self.last_edit_time = Instant::now();
+    }
+
+    pub fn status_left(&self) -> String {
+        let file = self
+            .current_file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("Untitled");
+        let dirty = if self.buffer.modified { " ●" } else { "" };
+        format!("{}{}", file, dirty)
+    }
+
+    pub fn status_right(&self) -> String {
+        let errs = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "ERROR")
+            .count();
+        let warns = self
+            .problems
+            .iter()
+            .filter(|d| d.severity == "WARNING")
+            .count();
+        format!(
+            "{} | {} | {} | E:{} W:{} | {}",
+            self.project_kind,
+            self.git_branch,
+            self.lsp.status,
+            errs,
+            warns,
+            self.mode.name()
+        )
+    }
+}
+
+fn language_id(lang: Language) -> &'static str {
+    match lang {
+        Language::Java => "java",
+        Language::Rust => "rust",
+        Language::Python => "python",
+        Language::Json => "json",
+        _ => "plaintext",
+    }
+}
+
+fn detect_git_branch(cwd: &Path) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(cwd)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() {
+                "git:?".into()
+            } else {
+                format!("git:{}", s)
+            }
+        }
+        _ => "git:—".into(),
+    }
+}
+
+fn detect_project_kind(cwd: &Path) -> String {
+    if cwd.join("pom.xml").is_file() {
+        "Maven".into()
+    } else if cwd.join("build.gradle").is_file() || cwd.join("build.gradle.kts").is_file() {
+        "Gradle".into()
+    } else if cwd.join("src").is_dir() {
+        "Java".into()
+    } else {
+        "Folder".into()
+    }
+}
+
+pub fn collect_workspace_files_pub(root: &Path, limit: usize) -> Vec<PathBuf> {
+    collect_workspace_files(root, limit)
+}
+
+fn collect_workspace_files(root: &Path, limit: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>, limit: usize, depth: usize) {
+        if out.len() >= limit || depth > 10 {
+            return;
+        }
+        let Ok(rd) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in rd.flatten() {
+            if out.len() >= limit {
+                return;
+            }
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.')
+                || name == "target"
+                || name == "node_modules"
+                || name == "desk-out"
+                || name == "build"
+            {
+                continue;
+            }
+            if path.is_dir() {
+                walk(&path, out, limit, depth + 1);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    walk(root, &mut out, limit, 0);
+    out
+}
+
+fn local_java_outline(lines: &[String]) -> Vec<overlay::OutlineSymbol> {
+    let mut symbols = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if t.starts_with("class ")
+            || t.starts_with("interface ")
+            || t.starts_with("enum ")
+            || t.starts_with("record ")
+            || ((t.contains("void ") || t.contains("public ") || t.contains("private "))
+                && t.contains('(')
+                && t.contains(')'))
+        {
+            let name = t
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or(t)
+                .trim_matches('{')
+                .to_string();
+            symbols.push(overlay::OutlineSymbol {
+                name,
+                kind: "local".into(),
+                line: i + 1,
+                column: 1,
+            });
+        }
+    }
+    symbols
 }
 
 #[cfg(test)]
@@ -2110,9 +3414,116 @@ mod tests {
         assert!(!app.buffer.modified);
 
         app.buffer.set_text("changed");
+        assert!(app.buffer.modified);
+        // :e refuses to discard unsaved edits
         app.command_line = format!(":e {}", file.display());
         app.execute_command_line();
+        assert_eq!(app.buffer.text(), "changed");
+        // :e! reloads from disk
+        app.command_line = format!(":e! {}", file.display());
+        app.execute_command_line();
         assert_eq!(app.buffer.text(), "class Demo {}");
+    }
+
+    #[test]
+    fn dirty_close_requests_confirmation() {
+        let mut app = test_app();
+        app.buffer.set_text("unsaved");
+        assert!(app.buffer.modified);
+        app.request_close_current_file();
+        assert!(matches!(app.overlay, Overlay::Confirm { .. }));
+        assert!(app.buffer.modified);
+        app.confirm_no();
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.buffer.modified);
+    }
+
+    #[test]
+    fn save_all_reports_untitled() {
+        let mut app = test_app();
+        app.buffer.set_text("untitled content");
+        assert!(app.buffer.modified);
+        assert!(app.current_file.is_none());
+        app.save_all_tabs().unwrap();
+        assert!(app.buffer.modified);
+    }
+
+    #[test]
+    fn disk_mtime_conflict_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Conflict.java");
+        fs::write(&file, "class A {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        assert!(!app.buffer.disk_changed_externally());
+        // External change
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&file, "class B {}").unwrap();
+        assert!(app.buffer.disk_changed_externally());
+    }
+
+    #[test]
+    fn external_change_prompts_reload_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Ext.java");
+        fs::write(&file, "class A {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&file, "class B {}").unwrap();
+        app.check_external_file_state();
+        assert!(matches!(
+            app.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::ReloadConflict,
+                ..
+            }
+        ));
+        app.confirm_no();
+        assert!(matches!(app.overlay, Overlay::None));
+        // Same external mtime should not re-prompt
+        app.check_external_file_state();
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn deleted_file_prompts_disk_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Gone.java");
+        fs::write(&file, "class G {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&file).unwrap();
+        fs::remove_file(&file).unwrap();
+        app.check_external_file_state();
+        assert!(matches!(
+            app.overlay,
+            Overlay::Confirm {
+                action: ConfirmAction::DiskDeleted,
+                ..
+            }
+        ));
+        app.confirm_no();
+        assert!(app.buffer.text().contains("class G"));
+        app.check_external_file_state();
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn switching_tabs_preserves_unsaved_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("A.java");
+        let b = dir.path().join("B.java");
+        fs::write(&a, "class A {}").unwrap();
+        fs::write(&b, "class B {}").unwrap();
+        let mut app = test_app();
+        app.open_file(&a).unwrap();
+        app.buffer.set_text("class A { int x; }");
+        assert!(app.buffer.modified);
+        app.open_file(&b).unwrap();
+        assert_eq!(app.buffer.text().trim(), "class B {}");
+        app.prev_tab();
+        assert!(app.buffer.text().contains("int x"));
+        assert!(app.buffer.modified);
     }
 
     #[test]
