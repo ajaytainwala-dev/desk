@@ -191,8 +191,8 @@ See `docs/REMAINING_LIMITATIONS.md`. Highlights: no TUI debug panel; no Spring B
 | Ref | SHA |
 |-----|-----|
 | `origin/main` | `4c69dbb77187f6f8c16dd1bc5e643c2fce821b5d` |
-| PR #4 head (`cursor/desk-workbench-foundation-22b9`) | `75a47fa` (security: JDK checksum + workspace-edit clamp) |
-| PR #5 head (`cursor/desk-phase-6-java-debug-22b9`) | `3faae67bf03d4de8e3d5b42d954bae76d151e238` (release-closure + security) |
+| PR #4 head (`cursor/desk-workbench-foundation-22b9`) | `75a47fa909681525c898719e1aa683753880414b` (security: JDK checksum + workspace-edit clamp) |
+| PR #5 head (`cursor/desk-phase-6-java-debug-22b9`) | Branch tip after release-closure commits (verify with `git rev-parse origin/cursor/desk-phase-6-java-debug-22b9` before merge) |
 
 ### CI (must match **current** head after security commits)
 
