@@ -88,6 +88,10 @@ public final class JdiDebugger implements AutoCloseable {
     ListeningConnector listener = findListenConnector();
     Map<String, Connector.Argument> args = listener.defaultArguments();
     args.get("timeout").setValue("20000");
+    // Bind loopback only — never expose JDWP on all interfaces.
+    if (args.containsKey("localAddress")) {
+      args.get("localAddress").setValue("127.0.0.1");
+    }
     String address;
     try {
       address = listener.startListening(args);

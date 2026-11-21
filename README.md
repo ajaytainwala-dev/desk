@@ -25,6 +25,7 @@ desk test
 desk fmt Main.java
 desk check Main.java
 desk git status
+desk debug run --main Demo --bp 12
 ```
 
 ## Commands
@@ -38,20 +39,21 @@ desk git status
 | `desk java …` | list / detect / current / use / info / doctor |
 | `desk lsp …` | diagnose / complete / hover / definition / references / symbols |
 | `desk build` / `desk clean` | Build or clean via Maven, Gradle, or javac |
-| `desk test` | Run tests |
+| `desk test` | Run tests (`--watch` not implemented — rejected) |
+| `desk debug run` | JDI/JDWP CLI debug (breakpoint / stack / locals) — **not** a TUI debug panel |
 | `desk doctor` | Aggregate JDK / project / Git / LSP health check |
 | `desk fmt` / `check` / `compile` / `run` | Existing single-file tooling |
 | `desk git …` | Status, branch, diff, commit, push, pull |
 | `desk version` / `help` | Version and help (`--version`, `--help` also work) |
 
 Full reference: [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md)  
+Release readiness (v0.1.0): [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md)  
 Java matrix: [`docs/java/VERSION_SUPPORT.md`](docs/java/VERSION_SUPPORT.md)  
 Project compatibility: [`docs/java/PROJECT_COMPATIBILITY.md`](docs/java/PROJECT_COMPATIBILITY.md)  
 JDK management: [`docs/java/JDK_MANAGEMENT.md`](docs/java/JDK_MANAGEMENT.md)  
 LSP setup: [`docs/java/LSP_SETUP.md`](docs/java/LSP_SETUP.md)  
-Debugging (DAP): [`docs/debug/DAP_DESIGN.md`](docs/debug/DAP_DESIGN.md)  
-Workspaces: [`docs/workspace/WORKSPACE_GUIDE.md`](docs/workspace/WORKSPACE_GUIDE.md)  
-Phase 4 results: [`docs/PHASE_4_RESULTS.md`](docs/PHASE_4_RESULTS.md)
+Debugging: [`docs/debug/DAP_IMPLEMENTATION.md`](docs/debug/DAP_IMPLEMENTATION.md) (JDI CLI; DAP transport limits)  
+Workspaces: [`docs/workspace/WORKSPACE_GUIDE.md`](docs/workspace/WORKSPACE_GUIDE.md)
 
 ## Java version policy
 
