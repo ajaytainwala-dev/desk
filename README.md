@@ -36,8 +36,8 @@ desk edit Main.java
 Requires **Java 23+** and **Rust stable** (2024 edition).
 
 ```bash
-git clone https://github.com/ajaytainwala-dev/javaproject.git
-cd javaproject
+git clone https://github.com/ajaytainwala-dev/desk.git
+cd desk
 
 ./mvnw clean verify
 cargo build --release --manifest-path modules/desk-tui/Cargo.toml
@@ -85,11 +85,11 @@ Release artifacts (GitHub Actions on version tags) use **stable asset names** so
 | `desk-native-*` / `desk-tui-*` | Standalone binaries |
 
 ```bash
-curl -fsSL https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup.sh | bash
+curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup.sh | bash
 ```
 
 ```powershell
-irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup-windows.ps1 | iex
+irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex
 ```
 
 ### Website

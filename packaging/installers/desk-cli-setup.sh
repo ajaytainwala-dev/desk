@@ -3,11 +3,11 @@
 # Downloads the latest release assets and installs `desk` onto PATH.
 #
 # Usage:
-#   curl -fsSL https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup.sh | bash
+#   curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup.sh | bash
 #   DESK_INSTALL_DIR="$HOME/bin" bash desk-cli-setup.sh
 set -euo pipefail
 
-REPO="${DESK_REPO:-ajaytainwala-dev/javaproject}"
+REPO="${DESK_REPO:-ajaytainwala-dev/desk}"
 INSTALL_DIR="${DESK_INSTALL_DIR:-$HOME/.local/bin}"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 

@@ -3,10 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import {
   DOWNLOAD_OPTIONS,
+  GITHUB_URL,
   detectPlatform,
   fetchLatestRelease,
   formatBytes,
-  latestReleasePageUrl,
+  latestAssetUrl,
   releasesPageUrl,
   resolveDownload,
   type DownloadKind,
@@ -48,19 +49,13 @@ function recommendedKind(platform: PlatformId): DownloadKind {
   return "cli-setup";
 }
 
-function installSnippet(
-  platform: PlatformId,
-  release: LatestRelease | null,
-): string {
-  const tag = release?.tag ?? "latest";
+function installSnippet(platform: PlatformId): string {
   if (platform === "windows") {
     return `# PowerShell — CLI setup from latest release
-irm https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup-windows.ps1 | iex
-
-# Or download Desk-Setup-${tag.replace(/^v/, "")}.exe from the release page`;
+irm ${latestAssetUrl("desk-cli-setup-windows.ps1")} | iex`;
   }
   return `# curl | bash — installs Desk CLI for your architecture
-curl -fsSL https://github.com/ajaytainwala-dev/javaproject/releases/latest/download/desk-cli-setup.sh | bash`;
+curl -fsSL ${latestAssetUrl("desk-cli-setup.sh")} | bash`;
 }
 
 export default function App() {
@@ -95,10 +90,14 @@ export default function App() {
     return () => ac.abort();
   }, []);
 
-  const options = useMemo(
-    () => DOWNLOAD_OPTIONS.filter((o) => o.platforms.includes(platform)),
-    [platform],
-  );
+  const options = useMemo(() => {
+    const forPlatform = DOWNLOAD_OPTIONS.filter((o) =>
+      o.platforms.includes(platform),
+    );
+    // Only show downloads that resolve to a real release asset
+    if (!release) return forPlatform;
+    return forPlatform.filter((o) => resolveDownload(release, o.kind, platform));
+  }, [platform, release]);
 
   const primaryHref = useMemo(() => {
     const kind = recommendedKind(platform);
@@ -106,7 +105,11 @@ export default function App() {
     if (asset) return asset.url;
     const zip = resolveDownload(release, "portable-zip", platform);
     if (zip) return zip.url;
-    return release ? latestReleasePageUrl(release.tag) : releasesPageUrl();
+    const tui = resolveDownload(release, "tui", platform);
+    if (tui) return tui.url;
+    // Stable latest/download URLs for scripts; GUI installer name includes version
+    if (platform === "windows") return latestAssetUrl("desk-cli-setup-windows.ps1");
+    return latestAssetUrl("desk-cli-setup.sh");
   }, [platform, release]);
 
   const fade = reduceMotion
@@ -160,8 +163,7 @@ export default function App() {
               {loading && "Checking latest release…"}
               {!loading && release && (
                 <>
-                  Latest{" "}
-                  <strong>{release.tag}</strong>
+                  Latest <strong>{release.tag}</strong>
                   {release.publishedAt
                     ? ` · ${new Date(release.publishedAt).toLocaleDateString(undefined, {
                         year: "numeric",
@@ -171,7 +173,6 @@ export default function App() {
                     : null}
                   {" · "}
                   <a href={release.htmlUrl}>Release notes</a>
-                  {" · links refresh on every new release"}
                 </>
               )}
               {!loading && releaseError && (
@@ -241,9 +242,8 @@ export default function App() {
           <p className="section__eyebrow">Downloads</p>
           <h2 className="section__title">Installers that stay current.</h2>
           <p className="section__lede">
-            Every visit loads the newest GitHub release. Ship a tag — the
-            buttons below pick up the new zip, CLI setup, and Windows installer
-            automatically.
+            Buttons below link straight to assets on the latest GitHub release.
+            Publish a new tag and the links update on the next visit.
           </p>
 
           <div
@@ -272,13 +272,13 @@ export default function App() {
                 <span>
                   Serving assets from <strong>{release.tag}</strong>
                 </span>
-                <a href={release.htmlUrl}>View on GitHub</a>
+                <a href={release.htmlUrl}>View release</a>
               </>
             )}
             {!loading && releaseError && (
               <span className="release-banner--error">
-                {releaseError}. Downloads will open the releases page until a
-                release is published.
+                {releaseError}.{" "}
+                <a href={releasesPageUrl()}>Open releases</a>
               </span>
             )}
           </div>
@@ -287,12 +287,21 @@ export default function App() {
             {options.map((opt) => {
               const asset = resolveDownload(release, opt.kind, platform);
               const recommended = opt.kind === recommendedKind(platform);
-              const href = asset?.url ?? (release ? release.htmlUrl : releasesPageUrl());
-              const label = asset
-                ? `Download ${opt.title}`
-                : release
-                  ? "Open release page"
-                  : "Browse releases";
+              // Prefer live asset URL; fall back to stable latest/download path
+              const version = (release?.tag ?? "v0.1.0").replace(/^v/, "");
+              const fallbackName =
+                opt.kind === "windows-gui"
+                  ? `Desk-Setup-${version}.exe`
+                  : opt.kind === "windows-cli"
+                    ? "desk-cli-setup-windows.ps1"
+                    : opt.kind === "cli-setup"
+                      ? "desk-cli-setup.sh"
+                      : opt.kind === "portable-zip"
+                        ? `desk-portable-${platform}.zip`
+                        : platform === "windows"
+                          ? "desk-tui-windows.exe"
+                          : `desk-tui-${platform}`;
+              const href = asset?.url ?? latestAssetUrl(fallbackName);
 
               return (
                 <article
@@ -309,20 +318,31 @@ export default function App() {
                   <div className="download-card__meta">
                     {asset
                       ? `${asset.name}${asset.size ? ` · ${formatBytes(asset.size)}` : ""}`
-                      : "Matching asset appears when CI uploads it to the latest release"}
+                      : fallbackName}
                   </div>
-                  <a className="btn btn--primary btn--block" href={href}>
-                    {label}
+                  <a
+                    className="btn btn--primary btn--block"
+                    href={href}
+                    download={asset?.name ?? fallbackName}
+                  >
+                    Download {opt.title}
                   </a>
                 </article>
               );
             })}
           </div>
 
+          {!loading && release && options.length === 0 && (
+            <p className="release-banner">
+              No matching assets for this platform in {release.tag}.{" "}
+              <a href={release.htmlUrl}>See all files</a>
+            </p>
+          )}
+
           <div className="install-hint">
             <h3>Quick CLI setup</h3>
             <pre>
-              <code>{installSnippet(platform, release)}</code>
+              <code>{installSnippet(platform)}</code>
             </pre>
           </div>
         </section>
@@ -348,10 +368,10 @@ export default function App() {
       <footer className="footer">
         <div>
           <span className="footer__brand">Desk</span>
-          <span> · MIT License</span>
+          <span> · MIT License · by Ajay</span>
         </div>
         <div>
-          <a href="https://github.com/ajaytainwala-dev/javaproject">GitHub</a>
+          <a href={GITHUB_URL}>Source</a>
           {" · "}
           <a href={releasesPageUrl()}>Releases</a>
         </div>

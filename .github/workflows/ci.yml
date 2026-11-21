@@ -1,10 +1,31 @@
 name: CI
 
+# Only run when Java / Rust / packaging / CI plumbing changes — not website, docs, or unrelated cleanup.
 on:
   push:
     branches: ['**']
+    paths:
+      - 'modules/**'
+      - 'pom.xml'
+      - 'mvnw'
+      - 'mvnw.cmd'
+      - '.mvn/**'
+      - 'packaging/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/native-build.yml'
+      - '.github/scripts/**'
   pull_request:
     branches: ['**']
+    paths:
+      - 'modules/**'
+      - 'pom.xml'
+      - 'mvnw'
+      - 'mvnw.cmd'
+      - '.mvn/**'
+      - 'packaging/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/native-build.yml'
+      - '.github/scripts/**'
   workflow_dispatch:
 
 concurrency:
@@ -137,24 +158,6 @@ jobs:
           name: desk-tui-${{ matrix.os }}
           path: modules/desk-tui/target/release/desk*
           retention-days: 30
-
-  website:
-    name: Website
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-      - name: Install and build
-        working-directory: website
-        run: |
-          npm ci
-          npm run build
 
   package:
     name: Package (jlink portable)

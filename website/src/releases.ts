@@ -1,5 +1,7 @@
-/** GitHub repo that hosts Desk release artifacts. */
-export const GITHUB_REPO = "ajaytainwala-dev/javaproject";
+/** GitHub repo that hosts Desk release artifacts (renamed from javaproject). */
+export const GITHUB_REPO = "ajaytainwala-dev/desk";
+
+export const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 
 export type PlatformId = "windows" | "macos" | "linux";
 
@@ -8,7 +10,6 @@ export type DownloadKind =
   | "windows-cli"
   | "portable-zip"
   | "cli-setup"
-  | "native"
   | "tui";
 
 export interface ReleaseAsset {
@@ -29,94 +30,69 @@ export interface DownloadOption {
   kind: DownloadKind;
   title: string;
   description: string;
-  /** Prefer these asset name patterns (first match wins). */
-  patterns: RegExp[];
   platforms: PlatformId[];
-  /** Shown when no matching asset exists yet. */
-  comingSoonHint?: string;
 }
 
-/** Stable product downloads — patterns match release asset names from CI. */
+/**
+ * Product downloads — each kind maps to a stable release asset name from CI.
+ * Only cards with a matching asset are shown on the site.
+ */
 export const DOWNLOAD_OPTIONS: DownloadOption[] = [
   {
     kind: "windows-gui",
     title: "Windows installer",
     description: "Guided GUI setup with Start Menu shortcuts and PATH option.",
-    patterns: [
-      /^Desk-Setup-.*\.exe$/i,
-      /^desk-setup-.*windows.*\.exe$/i,
-      /^desk-.*-setup\.exe$/i,
-    ],
     platforms: ["windows"],
   },
   {
     kind: "windows-cli",
     title: "Windows CLI setup",
     description: "PowerShell installer for terminals and scripts.",
-    patterns: [
-      /^desk-cli-setup-windows\.ps1$/i,
-      /^install-cli\.ps1$/i,
-      /^desk-install-windows\.ps1$/i,
-    ],
     platforms: ["windows"],
-  },
-  {
-    kind: "portable-zip",
-    title: "Portable zip",
-    description: "jlink runtime + Desk — unzip and run, no install required.",
-    patterns: [
-      /^desk-portable-windows\.zip$/i,
-      /^desk-portable-linux\.zip$/i,
-      /^desk-portable-macos\.zip$/i,
-      /^desk-portable\.zip$/i,
-      /^desk-portable-.*\.zip$/i,
-    ],
-    platforms: ["windows", "macos", "linux"],
   },
   {
     kind: "cli-setup",
     title: "CLI setup script",
     description: "One-liner install for macOS and Linux shells.",
-    patterns: [
-      /^desk-cli-setup\.sh$/i,
-      /^install-cli\.sh$/i,
-      /^desk-install\.sh$/i,
-    ],
     platforms: ["macos", "linux"],
   },
   {
-    kind: "native",
-    title: "Native binary",
-    description: "Standalone GraalVM native image for your OS.",
-    patterns: [], // filled per-platform below via resolveDownload
-    platforms: ["windows", "macos", "linux"],
+    kind: "portable-zip",
+    title: "Portable zip",
+    description: "jlink runtime + Desk — unzip and run, no install required.",
+    platforms: ["windows", "linux"],
   },
   {
     kind: "tui",
     title: "TUI editor binary",
     description: "Rust terminal UI binary (desk).",
-    patterns: [],
     platforms: ["windows", "macos", "linux"],
   },
 ];
 
-const NATIVE_PATTERNS: Record<PlatformId, RegExp[]> = {
-  windows: [/^desk-native-windows(\.exe)?$/i, /^desk\.exe$/i],
-  macos: [/^desk-native-macos$/i, /^desk$/i],
-  linux: [/^desk-native-linux$/i, /^desk$/i],
-};
-
-const TUI_PATTERNS: Record<PlatformId, RegExp[]> = {
-  windows: [/^desk-tui-windows(\.exe)?$/i, /^desk\.exe$/i],
-  macos: [/^desk-tui-macos$/i, /^desk$/i],
-  linux: [/^desk-tui-linux$/i, /^desk$/i],
-};
-
 function patternsFor(kind: DownloadKind, platform: PlatformId): RegExp[] {
-  if (kind === "native") return NATIVE_PATTERNS[platform];
-  if (kind === "tui") return TUI_PATTERNS[platform];
-  const option = DOWNLOAD_OPTIONS.find((o) => o.kind === kind);
-  return option?.patterns ?? [];
+  switch (kind) {
+    case "windows-gui":
+      return [/^Desk-Setup-.*\.exe$/i];
+    case "windows-cli":
+      return [/^desk-cli-setup-windows\.ps1$/i];
+    case "cli-setup":
+      return [/^desk-cli-setup\.sh$/i];
+    case "portable-zip":
+      return [
+        new RegExp(`^desk-portable-${platform}\\.zip$`, "i"),
+        // Generic alias is the Linux portable build
+        ...(platform === "linux" ? [/^desk-portable\.zip$/i] : []),
+      ];
+    case "tui":
+      return platform === "windows"
+        ? [/^desk-tui-windows(\.exe)?$/i]
+        : platform === "macos"
+          ? [/^desk-tui-macos$/i]
+          : [/^desk-tui-linux$/i];
+    default:
+      return [];
+  }
 }
 
 export function detectPlatform(): PlatformId {
@@ -143,7 +119,9 @@ export function findAsset(
   patterns: RegExp[],
 ): ReleaseAsset | null {
   for (const pattern of patterns) {
-    const match = assets.find((a) => pattern.test(a.name));
+    const match = assets.find(
+      (a) => pattern.test(a.name) && !a.name.endsWith(".sha256"),
+    );
     if (match) return match;
   }
   return null;
@@ -155,15 +133,12 @@ export function resolveDownload(
   platform: PlatformId,
 ): ReleaseAsset | null {
   if (!release) return null;
-  if (kind === "portable-zip") {
-    const preferred = [
-      new RegExp(`^desk-portable-${platform}\\.zip$`, "i"),
-      /^desk-portable\.zip$/i,
-      /^desk-portable-.*\.zip$/i,
-    ];
-    return findAsset(release.assets, preferred);
-  }
   return findAsset(release.assets, patternsFor(kind, platform));
+}
+
+/** Direct latest-download URL for a stable asset name (works before API loads). */
+export function latestAssetUrl(assetName: string): string {
+  return `${GITHUB_URL}/releases/latest/download/${assetName}`;
 }
 
 interface GhAsset {
@@ -182,8 +157,7 @@ interface GhRelease {
 
 /**
  * Fetch the newest published GitHub release. Each site load picks up new
- * assets after a tag/release — no website redeploy required for link updates
- * when asset names match the patterns above.
+ * assets after a tag/release — no website redeploy required for link updates.
  */
 export async function fetchLatestRelease(
   signal?: AbortSignal,
@@ -209,20 +183,21 @@ export async function fetchLatestRelease(
     name: data.name || data.tag_name,
     publishedAt: data.published_at,
     htmlUrl: data.html_url,
-    assets: (data.assets ?? []).map((a) => ({
-      name: a.name,
-      url: a.browser_download_url,
-      size: a.size,
-    })),
+    assets: (data.assets ?? [])
+      .filter((a) => !a.name.endsWith(".sha256"))
+      .map((a) => ({
+        name: a.name,
+        url: a.browser_download_url,
+        size: a.size,
+      })),
   };
 }
 
-/** Releases page fallback when a specific asset is missing. */
 export function releasesPageUrl(): string {
-  return `https://github.com/${GITHUB_REPO}/releases`;
+  return `${GITHUB_URL}/releases`;
 }
 
 export function latestReleasePageUrl(tag?: string): string {
-  if (tag) return `https://github.com/${GITHUB_REPO}/releases/tag/${tag}`;
+  if (tag) return `${GITHUB_URL}/releases/tag/${tag}`;
   return releasesPageUrl();
 }
