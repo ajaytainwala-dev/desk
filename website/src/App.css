@@ -406,6 +406,16 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 2.5rem;
   }
+
+  .features--wide {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 980px) {
+  .features--wide {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .feature h3 {

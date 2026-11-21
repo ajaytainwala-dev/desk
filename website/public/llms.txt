@@ -1,6 +1,6 @@
 # Desk
 
-> Open-source Java workbench with a Rust TUI editor.
+> Lightweight Java workbench with a terminal UI editor.
 
 Site: https://desk.ajaytainwala.dev/
 Repository: https://github.com/ajaytainwala-dev/desk
@@ -8,9 +8,8 @@ Releases: https://github.com/ajaytainwala-dev/desk/releases/latest
 
 ## What it is
 
-Desk helps developers format, check, compile, and run Java from the terminal.
-It includes a Rust terminal UI (Ratatui) editor and a small CLI — no heavy IDE
-required.
+Desk helps you open a Java project in the terminal, edit code in a TUI, then
+format, check, compile, and run — without a heavy IDE.
 
 ## Platforms
 

@@ -46,7 +46,7 @@ Incoming `workspace/applyEdit` is acknowledged; application goes through a confi
 | `MockLanguageServerIntegrationTest` | Always — in-process mock JSON-RPC (complete/hover/rename/format/shutdown) |
 | `LiveJdtLsIntegrationTest` | Only if `DESK_JDTLS_IT=1` and `DESK_JAVA_LS` set |
 
-Helper: `.github/scripts/fetch-jdtls.sh` (requires `DESK_JDTLS_URL`).
+Helper: `.github/scripts/provision-jdtls.sh` (pinned URL + SHA-256). Do **not** use the deprecated `fetch-jdtls.sh`.
 
 ## Honest limits
 

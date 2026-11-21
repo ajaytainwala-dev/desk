@@ -46,7 +46,8 @@ public final class TestCommand implements Command {
       Path root = WorkspaceStore.current().map(Workspace::root)
           .orElseGet(() -> Path.of("").toAbsolutePath().normalize());
       if (watch) {
-        System.out.println("Watch mode: running tests once now; continuous watch deferred to a later release.");
+        return CommandResult.failure(1,
+            "desk test --watch is not implemented yet. Omit --watch to run tests once.");
       }
       Path jdk = JdkSelector.current(root).map(j -> j.home()).orElse(null);
       BuildResult result = BuildService.execute(

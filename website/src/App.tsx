@@ -20,7 +20,7 @@ const AUTHOR_URL = "https://www.ajaytainwala.dev";
 const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "What is Desk?",
-    a: "Desk is an open-source Java workbench with a Rust terminal UI (TUI) editor. It helps you format, check, compile, and run Java from the terminal without a heavy IDE.",
+    a: "Desk is a lightweight Java workbench with a terminal UI editor. Open a project, edit code, then format, check, compile, and run — without a heavy IDE.",
   },
   {
     q: "Is Desk free?",
@@ -44,28 +44,43 @@ const PLATFORMS: { id: PlatformId; label: string }[] = [
 
 const FEATURES = [
   {
-    title: "Desk TUI editor",
-    body: "A focused Rust terminal UI (Ratatui) — open files fast, edit Java without leaving the keyboard.",
+    title: "Edit in the terminal",
+    body: "A focused TUI editor for your project — open files, switch tabs, and stay on the keyboard.",
   },
   {
-    title: "Format & check",
-    body: "desk fmt and desk check catch style and compile errors before you push.",
+    title: "Format, check, run",
+    body: "Catch issues and run Java from the same place you edit — no context switch to a full IDE.",
   },
   {
-    title: "Compile & run",
-    body: "Lightweight compile and run helpers via the JDK — no heavy IDE required.",
+    title: "Lightweight by design",
+    body: "A small toolkit that fits SSH sessions, quick fixes, and everyday Java loops.",
+  },
+];
+
+const USES = [
+  {
+    title: "Open a project",
+    body: "Run desk in a folder to start the editor on that workspace.",
+  },
+  {
+    title: "Fix and format",
+    body: "Use desk check and desk fmt when you want a fast pass over a file.",
+  },
+  {
+    title: "Compile and run",
+    body: "Compile and run from the CLI or TUI when you are ready to try the change.",
   },
 ];
 
 const CLI_COMMANDS: { cmd: string; desc: string }[] = [
   { cmd: "desk", desc: "Launch the Desk TUI editor" },
+  { cmd: "desk open <path>", desc: "Open a folder or file" },
   { cmd: "desk edit Main.java", desc: "Open a file in the TUI" },
   { cmd: "desk fmt Main.java", desc: "Format Java in place" },
   { cmd: "desk check Main.java", desc: "Report compile diagnostics" },
-  { cmd: "desk compile Main.java", desc: "Compile with javax.tools" },
+  { cmd: "desk compile Main.java", desc: "Compile a source file" },
   { cmd: "desk run Main", desc: "Run a compiled class" },
   { cmd: "desk help", desc: "List CLI commands" },
-  { cmd: "desk version", desc: "Print version" },
 ];
 
 const TUI_COMMANDS: { cmd: string; desc: string }[] = [
@@ -78,9 +93,8 @@ const TUI_COMMANDS: { cmd: string; desc: string }[] = [
   { cmd: "F3 / F8 / F4", desc: "Explorer, output panel, line numbers" },
   { cmd: "F5 / F6 / F9 / F10", desc: "Run, compile, format, check" },
   { cmd: "F7", desc: "Stop the running Java job" },
-  { cmd: ":w / :wq / :q", desc: "Save, save & quit, quit (command mode)" },
-  { cmd: ":fmt / :check / :help", desc: "Format, check, and help commands" },
-  { cmd: "Alt+F / E / V / R", desc: "Open File, Edit, View, Run menus" },
+  { cmd: ":w / :wq / :q", desc: "Save, save & quit, quit" },
+  { cmd: ":fmt / :check / :help", desc: "Format, check, and help" },
 ];
 
 function recommendedKind(platform: PlatformId): DownloadKind {
@@ -169,6 +183,7 @@ export default function App() {
         </a>
         <nav className="nav__links" aria-label="Primary">
           <a href="#features">Features</a>
+          <a href="#uses">Uses</a>
           <a href="#downloads">Downloads</a>
           <a href="#faq">FAQ</a>
           <a className="nav__cta" href="#downloads">
@@ -182,11 +197,11 @@ export default function App() {
           <motion.div className="hero__copy" {...fade}>
             <h1 className="hero__brand">Desk</h1>
             <p className="hero__headline">
-              Java workbench with a Desk TUI editor.
+              Edit Java in the terminal.
             </p>
             <p className="hero__lede">
-              Format, check, compile, and edit in the terminal — a lightweight
-              toolkit built around a Rust TUI that stays out of your way.
+              A lightweight workbench with a TUI editor — format, check,
+              compile, and run without opening a heavy IDE.
             </p>
             <div className="hero__actions">
               <a className="btn btn--primary" href={primaryHref}>
@@ -239,7 +254,7 @@ export default function App() {
                   <span className="terminal__cmd">desk</span>
                 </p>
                 <p className="terminal__line terminal__out">
-                  Desk TUI editor · Ratatui · open Main.java
+                  Open project · edit <span className="terminal__hl">Main.java</span>
                 </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
@@ -247,9 +262,6 @@ export default function App() {
                 </p>
                 <p className="terminal__line terminal__out">
                   Main.java:12: error: cannot find symbol
-                </p>
-                <p className="terminal__line terminal__err">
-                  {"  "}symbol: variable cout
                 </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
@@ -272,8 +284,8 @@ export default function App() {
           <p className="section__eyebrow">Why Desk</p>
           <h2 className="section__title">One toolkit. Stay in the terminal.</h2>
           <p className="section__lede">
-            Built for quick Java loops — edit in the Desk TUI editor, then
-            format, diagnose, and run without switching apps.
+            Built for the everyday Java loop — open a project, edit, then fix
+            and run without switching apps.
           </p>
           <div className="features">
             {FEATURES.map((f) => (
@@ -281,6 +293,23 @@ export default function App() {
                 <hr className="feature__rule" />
                 <h3>{f.title}</h3>
                 <p>{f.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="section" id="uses">
+          <p className="section__eyebrow">Uses</p>
+          <h2 className="section__title">The main loop.</h2>
+          <p className="section__lede">
+            Open a project, fix the code, run it — that is the Desk workflow.
+          </p>
+          <div className="features">
+            {USES.map((u) => (
+              <article className="feature" key={u.title}>
+                <hr className="feature__rule" />
+                <h3>{u.title}</h3>
+                <p>{u.body}</p>
               </article>
             ))}
           </div>
@@ -385,9 +414,8 @@ export default function App() {
             CLI and TUI that fit a muscle memory.
           </h2>
           <p className="section__lede">
-            Run bare <code>desk</code> for the Desk TUI editor, pass a
-            subcommand for scripts, or use the in-editor shortcuts once you are
-            inside the TUI (press <code>F1</code> anytime).
+            Run bare <code>desk</code> for the editor, or pass a subcommand for
+            scripts. Inside the TUI, press <code>F1</code> anytime for help.
           </p>
 
           <h3 className="commands__heading">CLI</h3>

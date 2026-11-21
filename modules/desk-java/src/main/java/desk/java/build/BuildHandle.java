@@ -83,21 +83,11 @@ public final class BuildHandle {
 
   /** Best-effort: destroy children first, then the parent (avoids orphan Maven/Gradle). */
   static void destroyProcessTree(Process process) {
-    try {
-      process.toHandle().descendants().forEach(ProcessHandle::destroy);
-    } catch (Exception ignored) {
-      // ignore
-    }
-    process.destroy();
+    desk.java.process.ProcessTreeKiller.terminate(process, 3000);
   }
 
   static void destroyProcessTreeForcibly(Process process) {
-    try {
-      process.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
-    } catch (Exception ignored) {
-      // ignore
-    }
-    process.destroyForcibly();
+    desk.java.process.ProcessTreeKiller.force(process);
   }
 
   public boolean isAlive() {
