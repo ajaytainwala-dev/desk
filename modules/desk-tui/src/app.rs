@@ -11,6 +11,15 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// One editor document tab. The active tab is mirrored in {@code App::buffer}
+/// for compatibility with existing input/render paths.
+#[derive(Debug, Clone)]
+pub struct EditorTab {
+    pub path: Option<PathBuf>,
+    pub buffer: Buffer,
+    pub language: Language,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuTab {
     None,
@@ -295,6 +304,9 @@ pub struct App {
     pub cwd: PathBuf,
 
     pub current_file: Option<PathBuf>,
+    /// All open tabs. Index {@code active_tab} matches {@code buffer}/{@code current_file}.
+    pub tabs: Vec<EditorTab>,
+    pub active_tab: usize,
     pub clipboard: String,
 
     pub last_terminal_size: (u16, u16),
@@ -347,6 +359,12 @@ impl App {
         let mut explorer_flat = Vec::new();
         Self::collect_nodes(&explorer, 0, &mut explorer_flat);
 
+        let initial_tab = EditorTab {
+            path: current_file.clone(),
+            buffer: buffer.clone(),
+            language,
+        };
+
         Self {
             buffer,
             config,
@@ -398,6 +416,8 @@ impl App {
             terminal_history_index: 0,
             cwd,
             current_file,
+            tabs: vec![initial_tab],
+            active_tab: 0,
             clipboard: String::new(),
             last_terminal_size: (80, 24),
             status_message: "Ready — F1 help | Ctrl+F find | F9 format | F5 run | Ctrl+J terminal"
@@ -413,6 +433,64 @@ impl App {
             bracket_match: None,
             pending_key: None,
         }
+    }
+
+    /// Persist the live buffer into the active tab slot.
+    pub fn sync_active_tab(&mut self) {
+        if self.tabs.is_empty() {
+            self.tabs.push(EditorTab {
+                path: self.current_file.clone(),
+                buffer: self.buffer.clone(),
+                language: self.language,
+            });
+            self.active_tab = 0;
+            return;
+        }
+        if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len() - 1;
+        }
+        self.tabs[self.active_tab] = EditorTab {
+            path: self.current_file.clone(),
+            buffer: self.buffer.clone(),
+            language: self.language,
+        };
+    }
+
+    pub fn activate_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        self.sync_active_tab();
+        self.active_tab = index;
+        let tab = &self.tabs[index];
+        self.buffer = tab.buffer.clone();
+        self.current_file = tab.path.clone();
+        self.language = tab.language;
+        self.mode = Mode::Normal;
+        self.bracket_match = None;
+        self.pending_key = None;
+        self.explorer_focused = false;
+        self.terminal_focused = false;
+    }
+
+    pub fn next_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let next = (self.active_tab + 1) % self.tabs.len();
+        self.activate_tab(next);
+    }
+
+    pub fn prev_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let prev = if self.active_tab == 0 {
+            self.tabs.len() - 1
+        } else {
+            self.active_tab - 1
+        };
+        self.activate_tab(prev);
     }
 
     fn apply_config(config: &EditorConfig, buffer: &mut Buffer) {
@@ -575,23 +653,52 @@ impl App {
     }
 
     pub fn open_file(&mut self, path: &Path) -> Result<(), std::io::Error> {
+        let canonical = path.to_path_buf();
+        let existing = self.tabs.iter().position(|t| {
+            t.path
+                .as_ref()
+                .is_some_and(|p| p == &canonical || p.as_path() == path)
+        });
+
         let mut buffer = Buffer::from_file(path)?;
         Self::apply_config(&self.config, &mut buffer);
+        buffer.cursor = Default::default();
+        buffer.selection = None;
+        buffer.scroll_top = 0;
+        buffer.scroll_left = 0;
+        buffer.end_edit_group();
+        let language = Language::from_path(Some(path));
+
+        if let Some(idx) = existing {
+            // Reload from disk into the existing tab. Do not sync_active_tab first —
+            // that would overwrite the on-disk content with unsaved buffer edits.
+            self.tabs[idx] = EditorTab {
+                path: Some(canonical.clone()),
+                buffer: buffer.clone(),
+                language,
+            };
+            self.active_tab = idx;
+            self.toast(&format!("Reloaded {}", path.display()), "INFO");
+        } else {
+            self.sync_active_tab();
+            self.tabs.push(EditorTab {
+                path: Some(canonical.clone()),
+                buffer: buffer.clone(),
+                language,
+            });
+            self.active_tab = self.tabs.len() - 1;
+            self.toast(&format!("Opened {}", path.display()), "INFO");
+        }
+
         self.buffer = buffer;
-        self.buffer.cursor = Default::default();
-        self.buffer.selection = None;
-        self.buffer.scroll_top = 0;
-        self.buffer.scroll_left = 0;
-        self.language = Language::from_path(Some(path));
-        self.current_file = Some(path.to_path_buf());
+        self.language = language;
+        self.current_file = Some(canonical);
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
         self.explorer_focused = false;
         self.terminal_focused = false;
         self.last_edit_time = Instant::now();
-        self.buffer.end_edit_group();
-        self.toast(&format!("Opened {}", path.display()), "INFO");
         self.refresh_explorer();
         Ok(())
     }
@@ -611,13 +718,22 @@ impl App {
     }
 
     pub fn new_file(&mut self, name: Option<&str>) {
-        self.buffer = Buffer::new_empty();
+        self.sync_active_tab();
+        let mut buffer = Buffer::new_empty();
         if let Some(name) = name.filter(|n| !n.is_empty()) {
-            self.buffer.path = Some(PathBuf::from(name));
+            buffer.path = Some(PathBuf::from(name));
         }
-        Self::apply_config(&self.config, &mut self.buffer);
+        Self::apply_config(&self.config, &mut buffer);
+        let language = Language::from_path(buffer.path.as_deref());
+        self.tabs.push(EditorTab {
+            path: buffer.path.clone(),
+            buffer: buffer.clone(),
+            language,
+        });
+        self.active_tab = self.tabs.len() - 1;
+        self.buffer = buffer;
         self.current_file = self.buffer.path.clone();
-        self.language = Language::from_path(self.current_file.as_deref());
+        self.language = language;
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
@@ -626,10 +742,32 @@ impl App {
     }
 
     pub fn close_current_file(&mut self) {
-        self.buffer = Buffer::new_empty();
-        Self::apply_config(&self.config, &mut self.buffer);
-        self.current_file = None;
-        self.language = Language::Generic;
+        self.sync_active_tab();
+        if self.tabs.is_empty() {
+            return;
+        }
+        let closing = self.active_tab.min(self.tabs.len() - 1);
+        self.tabs.remove(closing);
+        if self.tabs.is_empty() {
+            let mut buffer = Buffer::new_empty();
+            Self::apply_config(&self.config, &mut buffer);
+            self.tabs.push(EditorTab {
+                path: None,
+                buffer: buffer.clone(),
+                language: Language::Generic,
+            });
+            self.active_tab = 0;
+            self.buffer = buffer;
+            self.current_file = None;
+            self.language = Language::Generic;
+        } else {
+            let next = closing.min(self.tabs.len() - 1);
+            self.active_tab = next;
+            let tab = &self.tabs[next];
+            self.buffer = tab.buffer.clone();
+            self.current_file = tab.path.clone();
+            self.language = tab.language;
+        }
         self.mode = Mode::Normal;
         self.bracket_match = None;
         self.pending_key = None;
@@ -640,6 +778,32 @@ impl App {
         self.pending_run = None;
         self.tab_close_positions.clear();
         self.toast("Closed file", "INFO");
+    }
+
+    pub fn close_other_tabs(&mut self) {
+        self.sync_active_tab();
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let keep = self.tabs[self.active_tab].clone();
+        self.tabs.clear();
+        self.tabs.push(keep);
+        self.active_tab = 0;
+        self.toast("Closed other tabs", "INFO");
+    }
+
+    pub fn save_all_tabs(&mut self) -> Result<(), std::io::Error> {
+        self.sync_active_tab();
+        for tab in &mut self.tabs {
+            if let Some(path) = tab.path.clone() {
+                tab.buffer.save_as(&path)?;
+            }
+        }
+        if let Some(path) = self.current_file.clone() {
+            self.buffer.save_as(&path)?;
+        }
+        self.toast("Saved all", "SUCCESS");
+        Ok(())
     }
 
     pub fn save_current(&mut self) -> Result<(), std::io::Error> {
@@ -678,6 +842,7 @@ impl App {
         self.current_file = Some(path.to_path_buf());
         self.language = Language::from_path(Some(path));
         self.last_edit_time = Instant::now();
+        self.sync_active_tab();
         self.refresh_explorer();
         self.toast(&format!("Saved {}", path.display()), "SUCCESS");
         Ok(())

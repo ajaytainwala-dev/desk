@@ -212,7 +212,8 @@ fn render_menu_dropdown(f: &mut Frame, app: &mut App, menu_area: Rect, theme: &T
 
 fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
     app.tab_close_positions.clear();
-    if app.current_file.is_none() {
+    app.sync_active_tab();
+    if app.tabs.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 " ",
@@ -224,30 +225,47 @@ fn render_tab_bar(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         return;
     }
     let mut spans = Vec::new();
-    let name = app.file_name_or_no_name();
-    let modified = if app.is_modified() { " ●" } else { "" };
-    let tab = format!(" {}{} ", name, modified);
-    let tab_len = tab.chars().count() as u16;
-    let close = " ✕";
-    let close_len = close.chars().count() as u16;
-
-    spans.push(Span::styled(
-        tab,
-        Style::default()
-            .fg(theme.fg)
-            .bg(theme.title_bg)
-            .add_modifier(Modifier::BOLD),
-    ));
-    spans.push(Span::styled(
-        close,
-        Style::default().fg(theme.error).bg(theme.title_bg),
-    ));
-    app.tab_close_positions
-        .push((area.x, area.x + tab_len, area.x + tab_len + close_len, 0));
-    spans.push(Span::styled(
-        " │ ",
-        Style::default().fg(theme.border).bg(theme.title_bg),
-    ));
+    let mut x = area.x;
+    for (idx, tab) in app.tabs.iter().enumerate() {
+        let name = tab
+            .path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let modified = if idx == app.active_tab {
+            if app.is_modified() { " ●" } else { "" }
+        } else if tab.buffer.modified {
+            " ●"
+        } else {
+            ""
+        };
+        let label = format!(" {}{} ", name, modified);
+        let tab_len = label.chars().count() as u16;
+        let close = " ✕";
+        let close_len = close.chars().count() as u16;
+        let active = idx == app.active_tab;
+        let style = if active {
+            Style::default()
+                .fg(theme.fg)
+                .bg(theme.title_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.line_number).bg(theme.title_bg)
+        };
+        spans.push(Span::styled(label, style));
+        spans.push(Span::styled(
+            close,
+            Style::default().fg(theme.error).bg(theme.title_bg),
+        ));
+        app.tab_close_positions
+            .push((x, x + tab_len, x + tab_len + close_len, idx));
+        x = x.saturating_add(tab_len + close_len + 3);
+        spans.push(Span::styled(
+            " │ ",
+            Style::default().fg(theme.border).bg(theme.title_bg),
+        ));
+    }
     spans.push(Span::styled(
         app.cwd.display().to_string(),
         Style::default().fg(theme.line_number).bg(theme.title_bg),

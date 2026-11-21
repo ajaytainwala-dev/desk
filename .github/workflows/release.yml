@@ -80,7 +80,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: graalvm
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Install native-image component
         run: |
@@ -131,7 +131,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Build jlink portable distribution
         run: bash packaging/jlink/build-jlink.sh dist/desk-portable
@@ -210,7 +210,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
           cache: maven
       - name: Build jlink portable (Windows)
         shell: pwsh

@@ -67,8 +67,14 @@ public final class FileSystem {
           // Not all file systems support this attribute.
         }
       }
-      Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-          java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+      try {
+        Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+      } catch (IOException atomicFailed) {
+        // Cross-filesystem or unsupported ATOMIC_MOVE: fall back to replace.
+        Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      }
+      temp = null;
     } catch (IOException e) {
       // Clean up temp file if it lingers.
       if (temp != null) {

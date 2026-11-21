@@ -91,9 +91,21 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
                 return;
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
-                if let Err(e) = app.save_current() {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    if let Err(e) = app.save_all_tabs() {
+                        app.toast(&format!("Save all failed: {}", e), "ERROR");
+                    }
+                } else if let Err(e) = app.save_current() {
                     app.toast(&format!("Save failed: {}", e), "ERROR");
                 }
+                return;
+            }
+            KeyCode::Tab | KeyCode::PageDown => {
+                app.next_tab();
+                return;
+            }
+            KeyCode::BackTab | KeyCode::PageUp => {
+                app.prev_tab();
                 return;
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
@@ -195,14 +207,6 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) {
             KeyCode::Down => {
                 app.buffer.move_line(1);
                 app.mark_edited();
-                return;
-            }
-            KeyCode::PageUp => {
-                app.terminal_scroll = app.terminal_scroll.saturating_add(5);
-                return;
-            }
-            KeyCode::PageDown => {
-                app.terminal_scroll = app.terminal_scroll.saturating_sub(5);
                 return;
             }
             _ => {}
@@ -800,10 +804,14 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
             }
 
             if row == 1 {
-                for (start, end, _, idx) in app.tab_close_positions.clone() {
-                    if col >= start && col < end {
-                        let _ = idx;
+                for (tab_start, tab_end, close_end, idx) in app.tab_close_positions.clone() {
+                    if col >= tab_end && col < close_end {
+                        app.activate_tab(idx);
                         app.close_current_file();
+                        return;
+                    }
+                    if col >= tab_start && col < tab_end {
+                        app.activate_tab(idx);
                         return;
                     }
                 }
