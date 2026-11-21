@@ -46,7 +46,12 @@ desk git status
 
 Full reference: [`docs/cli/COMMAND_REFERENCE.md`](docs/cli/COMMAND_REFERENCE.md)  
 Java matrix: [`docs/java/VERSION_SUPPORT.md`](docs/java/VERSION_SUPPORT.md)  
-Workspaces: [`docs/workspace/WORKSPACE_GUIDE.md`](docs/workspace/WORKSPACE_GUIDE.md)
+Project compatibility: [`docs/java/PROJECT_COMPATIBILITY.md`](docs/java/PROJECT_COMPATIBILITY.md)  
+JDK management: [`docs/java/JDK_MANAGEMENT.md`](docs/java/JDK_MANAGEMENT.md)  
+LSP setup: [`docs/java/LSP_SETUP.md`](docs/java/LSP_SETUP.md)  
+Debugging (DAP): [`docs/debug/DAP_DESIGN.md`](docs/debug/DAP_DESIGN.md)  
+Workspaces: [`docs/workspace/WORKSPACE_GUIDE.md`](docs/workspace/WORKSPACE_GUIDE.md)  
+Phase 4 results: [`docs/PHASE_4_RESULTS.md`](docs/PHASE_4_RESULTS.md)
 
 ## Java version policy
 

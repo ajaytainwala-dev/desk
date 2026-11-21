@@ -14,3 +14,7 @@ pub mod lsp;
 pub mod mode;
 pub mod overlay;
 pub mod ui;
+pub mod workspace_edit;
+
+#[cfg(test)]
+mod bench_tests;

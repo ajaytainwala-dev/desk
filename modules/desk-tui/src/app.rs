@@ -335,6 +335,8 @@ pub struct App {
     pub java_status: String,
     pub project_kind: String,
     pub hover_text: Option<String>,
+    pub pending_workspace_edit: Option<crate::workspace_edit::WorkspaceEditPlan>,
+    pub pending_code_actions: Vec<crate::lsp::CodeActionEntry>,
 }
 
 impl App {
@@ -455,6 +457,8 @@ impl App {
             java_status: "Java ?".into(),
             project_kind: detect_project_kind(&cwd),
             hover_text: None,
+            pending_workspace_edit: None,
+            pending_code_actions: Vec::new(),
         };
         if initial_path.is_none() {
             app.restore_session_if_present();
@@ -2355,8 +2359,27 @@ impl App {
                 }
             }
             "compile" | "make" => self.compile_current_file(),
+            "build" => self.build_workspace(),
             "check" | "lint" => self.check_current_java(),
-            "fmt" | "format" => self.format_current(),
+            "fmt" | "format" => self.request_lsp_format(),
+            "rename" => self.execute_rename(rest),
+            "codeaction" | "fix" => {
+                if let Ok(n) = rest.parse::<usize>() {
+                    if let Some(action) =
+                        self.pending_code_actions.get(n.saturating_sub(1)).cloned()
+                    {
+                        if let Some(plan) = action.plan {
+                            self.prompt_workspace_edit("codeAction", plan);
+                        } else {
+                            self.toast("Action has no workspace edit", "WARN");
+                        }
+                    } else {
+                        self.toast("Unknown code action index", "WARN");
+                    }
+                } else {
+                    self.request_code_actions();
+                }
+            }
             "run" => self.run_current_file(),
             "stop" => self.stop_job(),
             "clear" | "cl" => self.clear_output(),
@@ -2388,7 +2411,7 @@ impl App {
                     }
                 }
             }
-            "mv" | "rename" => {
+            "mv" => {
                 let parts: Vec<&str> = rest.split_whitespace().collect();
                 if parts.len() != 2 {
                     self.toast("Usage: :mv <from> <to>", "WARN");
@@ -2530,6 +2553,158 @@ impl App {
                     self.toast(&format!("Deleted {}", path.display()), "INFO");
                 }
             }
+            ConfirmAction::ApplyWorkspaceEdit => {
+                if let Some(plan) = self.pending_workspace_edit.take() {
+                    self.apply_workspace_edit_plan(plan);
+                }
+            }
+        }
+    }
+
+    pub fn apply_workspace_edit_plan(&mut self, plan: crate::workspace_edit::WorkspaceEditPlan) {
+        use crate::workspace_edit::{apply_edits_to_lines, apply_file_on_disk};
+        self.sync_active_tab();
+        for file in &plan.files {
+            let open_idx = self.tabs.iter().position(|t| {
+                t.path.as_ref().is_some_and(|p| {
+                    fs::canonicalize(p).unwrap_or_else(|_| p.clone())
+                        == fs::canonicalize(&file.path).unwrap_or_else(|_| file.path.clone())
+                })
+            });
+            if let Some(idx) = open_idx {
+                apply_edits_to_lines(&mut self.tabs[idx].buffer.lines, &file.edits);
+                self.tabs[idx].buffer.modified = true;
+                if idx == self.active_tab {
+                    self.buffer.lines = self.tabs[idx].buffer.lines.clone();
+                    self.buffer.modified = true;
+                }
+            } else if let Err(e) = apply_file_on_disk(&file.path, &file.edits) {
+                self.toast(
+                    &format!("Edit failed for {}: {}", file.path.display(), e),
+                    "ERROR",
+                );
+            }
+        }
+        self.toast(&format!("Applied {}", plan.summary()), "SUCCESS");
+        self.refresh_explorer();
+    }
+
+    pub fn prompt_workspace_edit(
+        &mut self,
+        kind: &str,
+        plan: crate::workspace_edit::WorkspaceEditPlan,
+    ) {
+        if plan.is_empty() {
+            self.toast(&format!("No edits from {}", kind), "INFO");
+            return;
+        }
+        self.pending_workspace_edit = Some(plan.clone());
+        self.overlay = Overlay::Confirm {
+            title: format!("Apply {} edits?", kind),
+            message: format!(
+                "{} — confirm to apply across open/disk files",
+                plan.summary()
+            ),
+            action: ConfirmAction::ApplyWorkspaceEdit,
+        };
+    }
+
+    pub fn request_rename_symbol(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            self.toast("No file open", "WARN");
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        let word = self.buffer.word_at_cursor();
+        if word.is_empty() {
+            self.toast("No symbol under cursor", "WARN");
+            return;
+        }
+        self.show_command_line = true;
+        self.command_line = format!(":rename {}", word);
+        self.toast("Edit new name after :rename and press Enter", "INFO");
+        let _ = path;
+    }
+
+    pub fn execute_rename(&mut self, new_name: &str) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if new_name.is_empty() {
+            self.toast("Usage: :rename <newName>", "WARN");
+            return;
+        }
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) = self.lsp.request_rename(
+            &path,
+            self.buffer.cursor.line,
+            self.buffer.cursor.col,
+            new_name,
+        ) {
+            self.pending_lsp_request = Some(id);
+            self.toast("Renaming…", "INFO");
+        }
+    }
+
+    pub fn request_lsp_format(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            self.format_current();
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) = self.lsp.request_format(&path) {
+            self.pending_lsp_request = Some(id);
+            self.toast("Formatting via LSP…", "INFO");
+        }
+    }
+
+    pub fn request_code_actions(&mut self) {
+        let Some(path) = self.current_file.clone() else {
+            return;
+        };
+        if !self.lsp.available {
+            let status = self.lsp.status.clone();
+            self.toast(&status, "WARN");
+            return;
+        }
+        self.lsp.did_change(&path, &self.buffer.text());
+        if let Some(id) =
+            self.lsp
+                .request_code_action(&path, self.buffer.cursor.line, self.buffer.cursor.col)
+        {
+            self.pending_lsp_request = Some(id);
+        }
+    }
+
+    pub fn build_workspace(&mut self) {
+        self.show_output = true;
+        self.show_terminal = false;
+        if let Some(jar) = Self::find_desk_jar() {
+            let java = Self::java_tool("java");
+            let args = vec![
+                "-jar".to_string(),
+                jar.display().to_string(),
+                "build".to_string(),
+            ];
+            if let Err(e) = self.spawn_job("desk build".into(), &java, &args) {
+                self.toast(&format!("Build failed to start: {}", e), "ERROR");
+            } else {
+                self.push_output("Building… Esc or F7 to cancel", OutputKind::Info);
+            }
+        } else {
+            self.compile_current_file();
         }
     }
 
@@ -2591,8 +2766,10 @@ impl App {
             "references" => self.find_references(),
             "hover" => self.show_hover(),
             "format" => self.format_current(),
-            "build" | "compile" => self.compile_current_file(),
+            "build" | "compile" => self.build_workspace(),
             "run" => self.run_current_file(),
+            "rename" => self.request_rename_symbol(),
+            "code_action" => self.request_code_actions(),
             "explorer_new_file" => self.explorer_new_file(),
             "explorer_new_dir" => self.explorer_new_dir(),
             "explorer_rename" => self.explorer_rename(),
@@ -2766,6 +2943,71 @@ impl App {
                             symbols: items,
                             selected: 0,
                         };
+                    }
+                }
+                LspEvent::WorkspaceEdit {
+                    request_id,
+                    kind,
+                    plan,
+                } => {
+                    if request_id == 0 || self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        self.prompt_workspace_edit(&kind, plan);
+                    }
+                }
+                LspEvent::Formatted { request_id, edits } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if edits.is_empty() {
+                            self.toast("Already formatted", "INFO");
+                        } else {
+                            crate::workspace_edit::apply_edits_to_lines(
+                                &mut self.buffer.lines,
+                                &edits,
+                            );
+                            self.buffer.modified = true;
+                            self.sync_active_tab();
+                            self.toast("Formatted", "SUCCESS");
+                        }
+                    }
+                }
+                LspEvent::CodeActions {
+                    request_id,
+                    actions,
+                } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if actions.is_empty() {
+                            self.toast("No code actions", "INFO");
+                        } else {
+                            self.pending_code_actions = actions.clone();
+                            // Present as palette-like outline using first action confirm
+                            let labels: Vec<_> = actions.iter().map(|a| a.title.clone()).collect();
+                            self.toast(
+                                &format!(
+                                    "{} action(s). :codeaction <n> to apply (1-based)",
+                                    labels.len()
+                                ),
+                                "INFO",
+                            );
+                            for (i, a) in actions.iter().enumerate() {
+                                self.push_output(
+                                    &format!("[{}] {} ({})", i + 1, a.title, a.kind),
+                                    OutputKind::Info,
+                                );
+                            }
+                            self.show_output = true;
+                        }
+                    }
+                }
+                LspEvent::SignatureHelp { request_id, label } => {
+                    if self.pending_lsp_request == Some(request_id) {
+                        self.pending_lsp_request = None;
+                        if label.is_empty() {
+                            self.toast("No signature help", "INFO");
+                        } else {
+                            self.toast(&label, "INFO");
+                        }
                     }
                 }
                 LspEvent::Ready { .. } | LspEvent::Unavailable { .. } | LspEvent::Crashed => {}

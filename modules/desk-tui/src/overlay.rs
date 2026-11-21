@@ -10,6 +10,7 @@ pub enum ConfirmAction {
     ReloadConflict,
     SaveOverwriteConflict,
     DeletePath,
+    ApplyWorkspaceEdit,
 }
 
 #[derive(Debug, Clone)]
@@ -286,9 +287,19 @@ pub fn default_palette_items() -> Vec<PaletteItem> {
             hint: "F9".into(),
         },
         PaletteItem {
+            id: "rename".into(),
+            label: "Rename Symbol".into(),
+            hint: ":rename".into(),
+        },
+        PaletteItem {
+            id: "code_action".into(),
+            label: "Code Actions".into(),
+            hint: ":fix".into(),
+        },
+        PaletteItem {
             id: "build".into(),
             label: "Build Project".into(),
-            hint: "F6".into(),
+            hint: "F6 / Esc cancel".into(),
         },
         PaletteItem {
             id: "run".into(),

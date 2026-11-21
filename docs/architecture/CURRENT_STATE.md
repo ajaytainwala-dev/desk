@@ -5,6 +5,8 @@
 **Version under audit:** `0.1.0-SNAPSHOT` (released as `v0.1.0`)  
 **Method:** Source inspection of Maven modules, Rust TUI, packaging, CI, and website. Documentation claims were verified against code and often found stale.
 
+**Phase 4 update:** TUI LSP now covers rename/format/codeAction/applyEdit; Temurin managed install is real; fixtures under `testdata/fixtures/`; DAP remains design+stub. Prefer `docs/PHASE_4_RESULTS.md` and `docs/audit/PHASE_4_AUDIT.md` for the latest verified matrix (sections below may still describe pre-Phase-4 baselines).
+
 ---
 
 ## 1. Product shape

@@ -223,8 +223,8 @@ public final class JavaCommand implements Command {
     System.out.println("  license:  " + plan.licenseNote());
     System.out.println(result.message());
     return switch (result.status()) {
-      case PLANNED -> CommandResult.success();
-      case REQUIRES_CONSENT, NOT_IMPLEMENTED ->
+      case PLANNED, INSTALLED -> CommandResult.success();
+      case REQUIRES_CONSENT, FAILED ->
           CommandResult.failure(1, result.status().name());
     };
   }

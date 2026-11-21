@@ -15,6 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::overlay::{CompletionEntry, OutlineSymbol};
+use crate::workspace_edit::{WorkspaceEditPlan, parse_workspace_edit};
 
 #[derive(Debug, Clone)]
 pub struct LspDiagnostic {
@@ -62,10 +63,34 @@ pub enum LspEvent {
         request_id: u64,
         items: Vec<OutlineSymbol>,
     },
+    WorkspaceEdit {
+        request_id: u64,
+        kind: String,
+        plan: WorkspaceEditPlan,
+    },
+    Formatted {
+        request_id: u64,
+        edits: Vec<crate::workspace_edit::TextEdit>,
+    },
+    CodeActions {
+        request_id: u64,
+        actions: Vec<CodeActionEntry>,
+    },
+    SignatureHelp {
+        request_id: u64,
+        label: String,
+    },
     Error {
         message: String,
     },
     Crashed,
+}
+
+#[derive(Debug, Clone)]
+pub struct CodeActionEntry {
+    pub title: String,
+    pub kind: String,
+    pub plan: Option<WorkspaceEditPlan>,
 }
 
 #[derive(Debug)]
@@ -114,6 +139,32 @@ enum LspCommand {
     DocumentSymbol {
         request_id: u64,
         path: PathBuf,
+    },
+    Format {
+        request_id: u64,
+        path: PathBuf,
+    },
+    Rename {
+        request_id: u64,
+        path: PathBuf,
+        line: usize,
+        character: usize,
+        new_name: String,
+    },
+    CodeAction {
+        request_id: u64,
+        path: PathBuf,
+        line: usize,
+        character: usize,
+    },
+    SignatureHelp {
+        request_id: u64,
+        path: PathBuf,
+        line: usize,
+        character: usize,
+    },
+    Cancel {
+        id: u64,
     },
     Shutdown,
 }
@@ -275,6 +326,90 @@ impl LspBridge {
         Some(id)
     }
 
+    pub fn request_format(&mut self, path: &Path) -> Option<u64> {
+        self.cmd_tx.as_ref()?;
+        let id = self.next_request;
+        self.next_request += 1;
+        self.send(LspCommand::Format {
+            request_id: id,
+            path: path.to_path_buf(),
+        });
+        Some(id)
+    }
+
+    pub fn request_rename(
+        &mut self,
+        path: &Path,
+        line: usize,
+        character: usize,
+        new_name: &str,
+    ) -> Option<u64> {
+        self.cmd_tx.as_ref()?;
+        let id = self.next_request;
+        self.next_request += 1;
+        self.send(LspCommand::Rename {
+            request_id: id,
+            path: path.to_path_buf(),
+            line,
+            character,
+            new_name: new_name.to_string(),
+        });
+        Some(id)
+    }
+
+    pub fn request_code_action(
+        &mut self,
+        path: &Path,
+        line: usize,
+        character: usize,
+    ) -> Option<u64> {
+        self.cmd_tx.as_ref()?;
+        let id = self.next_request;
+        self.next_request += 1;
+        self.send(LspCommand::CodeAction {
+            request_id: id,
+            path: path.to_path_buf(),
+            line,
+            character,
+        });
+        Some(id)
+    }
+
+    pub fn request_signature_help(
+        &mut self,
+        path: &Path,
+        line: usize,
+        character: usize,
+    ) -> Option<u64> {
+        self.cmd_tx.as_ref()?;
+        let id = self.next_request;
+        self.next_request += 1;
+        self.send(LspCommand::SignatureHelp {
+            request_id: id,
+            path: path.to_path_buf(),
+            line,
+            character,
+        });
+        Some(id)
+    }
+
+    pub fn did_close(&self, path: &Path) {
+        self.send(LspCommand::DidClose {
+            path: path.to_path_buf(),
+        });
+    }
+
+    pub fn did_save(&self, path: &Path, text: &str) {
+        self.send(LspCommand::DidSave {
+            path: path.to_path_buf(),
+            text: text.to_string(),
+        });
+    }
+
+    pub fn cancel(&self, id: u64) {
+        self.send(LspCommand::Cancel { id });
+    }
+
     pub fn shutdown(&self) {
         self.send(LspCommand::Shutdown);
     }
@@ -348,7 +483,7 @@ fn run_session(
         });
     }
 
-    let mut stdin = child.stdin.take().ok_or("no stdin")?;
+    let stdin = Arc::new(Mutex::new(child.stdin.take().ok_or("no stdin")?));
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let reader = Arc::new(Mutex::new(BufReader::new(stdout)));
     let pending: Arc<Mutex<HashMap<u64, Pending>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -359,6 +494,7 @@ fn run_session(
         let reader = Arc::clone(&reader);
         let event_tx = event_tx.clone();
         let pending = Arc::clone(&pending);
+        let stdin_r = Arc::clone(&stdin);
         thread::spawn(move || {
             loop {
                 let msg = match read_message(&mut *reader.lock().unwrap()) {
@@ -372,66 +508,80 @@ fn run_session(
                         break;
                     }
                 };
-                dispatch_message(msg, &pending, &event_tx);
+                dispatch_message(msg, &pending, &event_tx, &stdin_r);
             }
         });
     }
 
     // initialize
     let init_id = 1u64;
-    write_message(
-        &mut stdin,
-        &json!({
-            "jsonrpc": "2.0",
-            "id": init_id,
-            "method": "initialize",
-            "params": {
-                "processId": std::process::id(),
-                "rootUri": path_to_uri(&workspace),
-                "capabilities": {
-                    "textDocument": {
-                        "synchronization": { "didSave": true },
-                        "completion": { "completionItem": { "snippetSupport": false } },
-                        "hover": { "contentFormat": ["plaintext", "markdown"] },
-                        "definition": {},
-                        "references": {},
-                        "documentSymbol": {},
-                        "publishDiagnostics": {}
+    {
+        let mut stdin_g = stdin.lock().unwrap();
+        write_message(
+            &mut *stdin_g,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": init_id,
+                "method": "initialize",
+                "params": {
+                    "processId": std::process::id(),
+                    "rootUri": path_to_uri(&workspace),
+                    "capabilities": {
+                        "textDocument": {
+                            "synchronization": { "didSave": true },
+                            "completion": { "completionItem": { "snippetSupport": false } },
+                            "hover": { "contentFormat": ["plaintext", "markdown"] },
+                            "definition": {},
+                            "references": {},
+                            "documentSymbol": {},
+                            "formatting": {},
+                            "rename": { "prepareSupport": false },
+                            "codeAction": {},
+                            "signatureHelp": {},
+                            "publishDiagnostics": {}
+                        },
+                        "workspace": {
+                            "workspaceFolders": true,
+                            "applyEdit": true
+                        }
                     },
-                    "workspace": { "workspaceFolders": true }
-                },
-                "workspaceFolders": [{
-                    "uri": path_to_uri(&workspace),
-                    "name": workspace.file_name().and_then(|n| n.to_str()).unwrap_or("workspace")
-                }]
-            }
-        }),
-    )?;
-    // Wait briefly for initialize result (reader will not complete pending for id 1 specially —
-    // we just notify initialized after a short delay / or track pending).
+                    "workspaceFolders": [{
+                        "uri": path_to_uri(&workspace),
+                        "name": workspace.file_name().and_then(|n| n.to_str()).unwrap_or("workspace")
+                    }]
+                }
+            }),
+        )?;
+    }
+    // Wait briefly for initialize result
     thread::sleep(Duration::from_millis(500));
-    write_message(
-        &mut stdin,
-        &json!({
-            "jsonrpc": "2.0",
-            "method": "initialized",
-            "params": {}
-        }),
-    )?;
+    {
+        let mut stdin_g = stdin.lock().unwrap();
+        write_message(
+            &mut *stdin_g,
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "initialized",
+                "params": {}
+            }),
+        )?;
+    }
     let _ = event_tx.send(LspEvent::Ready {
         server: server.display().to_string(),
     });
 
     let mut rpc_id: u64 = 10;
     while let Ok(cmd) = cmd_rx.recv() {
+        let mut stdin_g = stdin.lock().unwrap();
+        let stdin = &mut *stdin_g;
         match cmd {
             LspCommand::Shutdown => {
                 let _ = write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({"jsonrpc":"2.0","id": rpc_id, "method":"shutdown","params": null}),
                 );
                 let _ = write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({"jsonrpc":"2.0","method":"exit","params": null}),
                 );
                 break;
@@ -447,7 +597,7 @@ fn run_session(
                 let version = *v;
                 drop(vers);
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "method": "textDocument/didOpen",
@@ -469,7 +619,7 @@ fn run_session(
                 let version = *v;
                 drop(vers);
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "method": "textDocument/didChange",
@@ -482,7 +632,7 @@ fn run_session(
             }
             LspCommand::DidSave { path, text } => {
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "method": "textDocument/didSave",
@@ -495,7 +645,7 @@ fn run_session(
             }
             LspCommand::DidClose { path } => {
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "method": "textDocument/didClose",
@@ -515,7 +665,7 @@ fn run_session(
                     .unwrap()
                     .insert(rpc_id, Pending::Complete { request_id });
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "id": rpc_id,
@@ -536,7 +686,7 @@ fn run_session(
                     .unwrap()
                     .insert(rpc_id, Pending::Hover { request_id });
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "id": rpc_id,
@@ -560,7 +710,7 @@ fn run_session(
                     },
                 );
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "id": rpc_id,
@@ -586,7 +736,7 @@ fn run_session(
                 let mut params = position_params(&path, line, character);
                 params["context"] = json!({ "includeDeclaration": true });
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "id": rpc_id,
@@ -602,12 +752,119 @@ fn run_session(
                     .unwrap()
                     .insert(rpc_id, Pending::Symbols { request_id });
                 write_message(
-                    &mut stdin,
+                    stdin,
                     &json!({
                         "jsonrpc": "2.0",
                         "id": rpc_id,
                         "method": "textDocument/documentSymbol",
                         "params": { "textDocument": { "uri": path_to_uri(&path) } }
+                    }),
+                )?;
+            }
+            LspCommand::Format { request_id, path } => {
+                rpc_id += 1;
+                pending
+                    .lock()
+                    .unwrap()
+                    .insert(rpc_id, Pending::Format { request_id });
+                write_message(
+                    stdin,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "method": "textDocument/formatting",
+                        "params": {
+                            "textDocument": { "uri": path_to_uri(&path) },
+                            "options": { "tabSize": 4, "insertSpaces": true }
+                        }
+                    }),
+                )?;
+            }
+            LspCommand::Rename {
+                request_id,
+                path,
+                line,
+                character,
+                new_name,
+            } => {
+                rpc_id += 1;
+                pending.lock().unwrap().insert(
+                    rpc_id,
+                    Pending::WorkspaceEdit {
+                        request_id,
+                        kind: "rename".into(),
+                    },
+                );
+                write_message(
+                    stdin,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "method": "textDocument/rename",
+                        "params": {
+                            "textDocument": { "uri": path_to_uri(&path) },
+                            "position": { "line": line, "character": character },
+                            "newName": new_name
+                        }
+                    }),
+                )?;
+            }
+            LspCommand::CodeAction {
+                request_id,
+                path,
+                line,
+                character,
+            } => {
+                rpc_id += 1;
+                pending
+                    .lock()
+                    .unwrap()
+                    .insert(rpc_id, Pending::CodeAction { request_id });
+                write_message(
+                    stdin,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "method": "textDocument/codeAction",
+                        "params": {
+                            "textDocument": { "uri": path_to_uri(&path) },
+                            "range": {
+                                "start": { "line": line, "character": character },
+                                "end": { "line": line, "character": character }
+                            },
+                            "context": { "diagnostics": [] }
+                        }
+                    }),
+                )?;
+            }
+            LspCommand::SignatureHelp {
+                request_id,
+                path,
+                line,
+                character,
+            } => {
+                rpc_id += 1;
+                pending
+                    .lock()
+                    .unwrap()
+                    .insert(rpc_id, Pending::SignatureHelp { request_id });
+                write_message(
+                    stdin,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "method": "textDocument/signatureHelp",
+                        "params": position_params(&path, line, character)
+                    }),
+                )?;
+            }
+            LspCommand::Cancel { id } => {
+                write_message(
+                    stdin,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "method": "$/cancelRequest",
+                        "params": { "id": id }
                     }),
                 )?;
             }
@@ -627,6 +884,10 @@ enum Pending {
     Hover { request_id: u64 },
     Locations { request_id: u64, kind: String },
     Symbols { request_id: u64 },
+    Format { request_id: u64 },
+    WorkspaceEdit { request_id: u64, kind: String },
+    CodeAction { request_id: u64 },
+    SignatureHelp { request_id: u64 },
 }
 
 fn child_alive(child: &mut Child) -> bool {
@@ -691,6 +952,7 @@ fn dispatch_message(
     msg: Value,
     pending: &Arc<Mutex<HashMap<u64, Pending>>>,
     event_tx: &Sender<LspEvent>,
+    stdin: &Arc<Mutex<std::process::ChildStdin>>,
 ) {
     if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
         if method == "textDocument/publishDiagnostics" {
@@ -730,6 +992,30 @@ fn dispatch_message(
                 }
                 let _ = event_tx.send(LspEvent::Diagnostics { path, items });
             }
+            return;
+        }
+        if method == "workspace/applyEdit" {
+            if let Some(id) = msg.get("id").cloned() {
+                let edit = msg.pointer("/params/edit").cloned().unwrap_or(Value::Null);
+                let plan = parse_workspace_edit(&edit);
+                let _ = event_tx.send(LspEvent::WorkspaceEdit {
+                    request_id: 0,
+                    kind: "applyEdit".into(),
+                    plan,
+                });
+                // Acknowledge without applying automatically — UI confirms separately.
+                if let Ok(mut s) = stdin.lock() {
+                    let _ = write_message(
+                        &mut *s,
+                        &json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": { "applied": false, "failureReason": "awaiting user confirmation in Desk" }
+                        }),
+                    );
+                }
+            }
+            return;
         }
         return;
     }
@@ -776,7 +1062,86 @@ fn dispatch_message(
             let items = parse_symbols(&result);
             let _ = event_tx.send(LspEvent::Symbols { request_id, items });
         }
+        Pending::Format { request_id } => {
+            let edits = parse_text_edits(&result);
+            let _ = event_tx.send(LspEvent::Formatted { request_id, edits });
+        }
+        Pending::WorkspaceEdit { request_id, kind } => {
+            let plan = parse_workspace_edit(&result);
+            let _ = event_tx.send(LspEvent::WorkspaceEdit {
+                request_id,
+                kind,
+                plan,
+            });
+        }
+        Pending::CodeAction { request_id } => {
+            let actions = parse_code_actions(&result);
+            let _ = event_tx.send(LspEvent::CodeActions {
+                request_id,
+                actions,
+            });
+        }
+        Pending::SignatureHelp { request_id } => {
+            let label = parse_signature_help(&result);
+            let _ = event_tx.send(LspEvent::SignatureHelp { request_id, label });
+        }
     }
+}
+
+fn parse_text_edits(result: &Value) -> Vec<crate::workspace_edit::TextEdit> {
+    let Some(arr) = result.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|e| {
+            let start = e.pointer("/range/start")?;
+            let end = e.pointer("/range/end")?;
+            Some(crate::workspace_edit::TextEdit {
+                start_line: start.get("line")?.as_u64()? as usize,
+                start_col: start.get("character")?.as_u64()? as usize,
+                end_line: end.get("line")?.as_u64()? as usize,
+                end_col: end.get("character")?.as_u64()? as usize,
+                new_text: e.get("newText")?.as_str()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_code_actions(result: &Value) -> Vec<CodeActionEntry> {
+    let Some(arr) = result.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|item| {
+            let title = item.get("title")?.as_str()?.to_string();
+            let kind = item
+                .get("kind")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_string();
+            let plan = item
+                .get("edit")
+                .map(parse_workspace_edit)
+                .filter(|p| !p.is_empty());
+            Some(CodeActionEntry { title, kind, plan })
+        })
+        .collect()
+}
+
+fn parse_signature_help(result: &Value) -> String {
+    if result.is_null() {
+        return String::new();
+    }
+    if let Some(sigs) = result.get("signatures").and_then(|s| s.as_array()) {
+        if let Some(first) = sigs.first() {
+            return first
+                .get("label")
+                .and_then(|l| l.as_str())
+                .unwrap_or("")
+                .to_string();
+        }
+    }
+    String::new()
 }
 
 fn parse_completions(result: &Value) -> Vec<CompletionEntry> {

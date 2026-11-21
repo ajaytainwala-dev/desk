@@ -2,7 +2,7 @@ use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 
-use crate::app::{App, MenuTab};
+use crate::app::{App, JobStatus, MenuTab};
 use crate::buffer::Selection;
 use crate::mode::Mode;
 use crate::overlay::default_palette_items;
@@ -684,6 +684,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             app.mark_edited();
         }
         KeyCode::Esc => {
+            if app
+                .job
+                .as_ref()
+                .is_some_and(|j| j.status == JobStatus::Running)
+            {
+                app.stop_job();
+                return;
+            }
             app.explorer_focused = false;
             app.terminal_focused = false;
             app.active_menu = MenuTab::None;
@@ -696,6 +704,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 fn handle_insert_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
+            if app
+                .job
+                .as_ref()
+                .is_some_and(|j| j.status == JobStatus::Running)
+            {
+                app.stop_job();
+                return;
+            }
             app.mode = Mode::Normal;
             app.buffer.selection = None;
             app.buffer.end_edit_group();

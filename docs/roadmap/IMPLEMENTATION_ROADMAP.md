@@ -36,7 +36,7 @@
 | Multi-source JDK discovery | DONE | PATH, SDKMAN, macOS JVMs, vendors, metadata |
 | Runtime vs compiler vs project JDK separation | DONE | `ToolchainContext` + workspace pin |
 | CLI: `desk java list/detect/current/use/info/doctor` | DONE | + install/remove/policy |
-| Optional JDK provisioning (consent) | PARTIAL | Plan + consent gate; download not auto-executed |
+| Optional JDK provisioning (consent) | DONE (Temurin) | Consent + checksum + extract; other vendors plan-only |
 | Java 26/27 compatibility smoke | PARTIAL | Policy + detect; needs host JDKs for runtime smoke |
 
 **Dependencies:** Stage A  
@@ -78,10 +78,11 @@
 | Item | Status |
 |------|--------|
 | LSP client architecture | DONE (interfaces + process host) |
-| jdt.ls adapter (optional) | PARTIAL (`DESK_JAVA_LS` + fallback) |
-| Diagnostics → Problems panel | PARTIAL (CLI diagnostics; TUI panel next) |
-| Completion / navigation / code actions | DEFERRED until LS stable |
+| jdt.ls adapter (optional) | PARTIAL (`DESK_JAVA_LS` + fallback; live CI E2E next) |
+| Diagnostics → Problems panel | DONE (TUI problems + F11) |
+| Completion / navigation / rename / format / code actions | DONE in TUI client (needs live jdtls) |
 | Fallback `javac` diagnostics | DONE (`JavacLanguageClient`) |
+| WorkspaceEdit confirm apply | DONE (`workspace_edit.rs`) |
 
 **Risk:** jdt.ls distribution size — keep optional.
 
@@ -162,13 +163,16 @@ F needs B (JDK) and C (workspace root).
 
 ---
 
-## Prioritized next-phase (post this PR train)
+## Phase 5 (post Phase 4)
 
-1. Full jdt.ls-backed completion/navigation/refactor  
-2. True PTY terminal  
-3. Split editor + debugger adapter protocol exploration  
-4. Internal extension host v1  
-5. ARM64 CI matrix + notarized macOS DMG  
+1. Live jdtls E2E CI + Spring Boot resolve golden tests  
+2. DAP adapter end-to-end (no fake UI)  
+3. BuildHandle streaming panel + Esc cancel for Maven/Gradle  
+4. True PTY investigation without destabilizing editor  
+5. Published large-file / LSP latency baselines  
+6. Internal extension host v1 / ARM64 CI / notarized macOS DMG (later)
+
+See `docs/PHASE_4_RESULTS.md`.  
 
 ---
 

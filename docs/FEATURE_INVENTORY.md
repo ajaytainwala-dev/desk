@@ -1,6 +1,6 @@
 # Implemented Feature Inventory
 
-Updated: 2026-11-21
+Updated: 2026-11-21 (Phase 4)
 
 ## Completed in this initiative
 
@@ -11,40 +11,43 @@ Updated: 2026-11-21
 | JDK discovery | Multi-source detect with metadata | Reliable toolchain inventory | `desk-java` `JdkDiscovery` | `JdkDiscoveryTest` |
 | Workspace JDK pin | `.desk/jdk.json`, user pin | Per-project JDK without touching `JAVA_HOME` | `JdkSelector` | `JdkSelectorTest` |
 | `desk java *` CLI | list/detect/current/use/info/doctor/install/remove/policy | User-facing toolchain control | `JavaCommand` | `JavaCommandTest` |
-| Consent JDK provisioning | Plan + license note; no silent download | Safe optional managed JDKs | `JdkProvisioner` | dry-run via CLI test |
+| Managed Temurin install | Consent + checksum + safe extract | Optional managed JDKs | `JdkProvisioner` | CLI + provisioner paths |
 | Workspace store | open/list/close/session/recent | Cohesive project context | `desk-core` workspace | `WorkspaceStoreTest` |
-| DocumentStore | Single identity per path | Avoid divergent document copies | `desk-core` document | `WorkspaceStoreTest` |
-| Project detection | Maven/Gradle/plain/multi-module | Don't force Desk layouts | `ProjectDetector` | `ProjectDetectorTest` |
+| DocumentStore | Single identity per path; saveAs/saveAll | Avoid divergent copies / silent loss | `desk-core` document | `DocumentStoreTest` |
+| Project detection | Maven/Gradle/plain/multi-module | Don't force Desk layouts | `ProjectDetector` | `ProjectDetectorTest`, `ProjectFixtureTest` |
+| Real-world fixtures | Maven/Gradle/Spring/multi | Compatibility matrix | `testdata/fixtures` | `ProjectFixtureTest` |
 | Project templates | `desk new` with Java 25 default | Fast project bootstrap | `ProjectTemplates` | `ProjectDetectorTest` |
-| Build orchestration | `desk build` / `desk test` | Orchestrate mvn/gradle/javac | `BuildService` | `BuildServiceTest` |
+| Build orchestration | `desk build` / `desk test` + BuildHandle | Orchestrate mvn/gradle/javac | `BuildService` | `BuildServiceTest`, `BuildHandleTest` |
+| TUI build + Esc cancel | Live output panel; Esc/F7 stop | Non-blocking builds | `desk-tui` | cargo app/input |
 | Diagnostics mapping | Parse javac/maven errors | Jump-friendly problem list | `BuildDiagnostic` | `BuildServiceTest` |
 | Git facade | `desk git …` with credential redaction | Useful SCM without reimplementing Git | `GitService` | `GitServiceTest` |
-| LSP architecture | Client host + javac fallback + external adapter | Extensible intelligence without fake LS | `desk.java.lsp.*` | covered via compile path |
-| TUI multi-tabs | Open multiple files, switch/close/save-all | Real multi-document editing | `desk-tui` | existing + open/reload tests |
-| Docs | CLI/workspace/Java matrix | Accurate operator docs | `docs/**` | N/A |
+| LSP Java + TUI client | Content-Length; complete/nav/hover/rename/format/codeAction | Real editor intelligence | `desk.java.lsp.*`, `desk-tui/lsp.rs` | transport + cargo |
+| WorkspaceEdit apply | Multi-file bottom-up + confirm | Safe refactor | `workspace_edit.rs` | cargo |
+| Quality runners | Checkstyle/PMD/SpotBugs/ErrorProne hints | Optional lint | `desk.java.quality` | graceful skip |
+| Productivity overlays | Fuzzy files, palette, find-in-files | Faster navigation | `overlay.rs` | cargo |
+| Docs | CLI/workspace/Java/LSP/JDK/Phase results | Accurate operator docs | `docs/**` | N/A |
 
 ## Partial
 
 | Feature | Status | Limitation |
 |---------|--------|------------|
-| Managed JDK download | Plan/consent only | Does not auto-download archives yet (explicit) |
+| Managed JDK (non-Temurin) | Plan/consent | Download implemented for Temurin primarily |
 | `desk test --watch` | Flag accepted | Continuous watch deferred |
-| External JDT LS | Process host + env `DESK_JAVA_LS` | Full JSON-RPC LSP framing not wired |
-| Completion / navigation / refactor | API present | Empty until LS protocol complete |
+| External JDT LS live E2E | Client ready | CI may lack jdtls |
+| DAP debugging | Stub + design | Throws until adapter wired |
 | Terminal PTY | Job runner remains | Not a full emulator |
-| Split editor views | Deferred | After multi-tab hardening |
-| Command palette (fuzzy) | Deferred | Vim `:` and menus remain |
-| macOS portable zip | Known pre-existing gap | Documented; fix tracked |
-| Viewport-only highlighting | Not yet | Still full-buffer highlight per frame |
+| Split editor views | Deferred | After further hardening |
+| Numeric perf SLAs | Micro-benches | Not published as gate SLAs |
+| disk_mtime proactive reload | Save conflict works | On-focus ReloadConflict overlay partial |
 
 ## Deferred (intentional)
 
 - Public plugin marketplace
-- Debugger Adapter Protocol
+- Full DAP end-to-end
 - JavaFX template
 - ARM64 CI matrix
 - Notarized macOS DMG
-- Checkstyle/PMD/SpotBugs integrations (optional quality tools)
+- Full PTY emulator
 
 ## Preserved existing behavior
 

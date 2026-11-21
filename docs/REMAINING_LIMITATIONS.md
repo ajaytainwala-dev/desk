@@ -1,14 +1,15 @@
 # Remaining Limitations
 
-Honest inventory after Phase 3 (editor integration).
+Honest inventory after Phase 4 (real-world readiness increment).
 
-1. **Live JDT LS in CI** — TUI LSP client is implemented; runners may not have `jdtls`. Set `DESK_JAVA_LS` locally for full intelligence.
-2. **LSP rename / code actions / format in TUI** — Protocol support exists in Java session; TUI UI not fully wired for workspace edits.
-3. **Managed JDK download** — Still `NOT_IMPLEMENTED` after consent (plan only).
-4. **`desk test --watch`** — Flag accepted; continuous watch not implemented.
-5. **Terminal** — Job/shell runner, not a full PTY.
-6. **Split editors** — Deferred until buffer/layout architecture is further hardened.
-7. **Build Esc-cancel in TUI** — `BuildHandle` exists; TUI still primarily uses local compile jobs — wire Maven/Gradle cancel next.
-8. **Quality tools** — Checkstyle optional runner present; PMD/SpotBugs/Error Prone not yet.
-9. **Windows portable jlink** — Release still focuses Linux/macOS portable + Windows installer/TUI.
-10. **Benchmarks** — No published numeric baselines yet; do not invent timings.
+1. **Live JDT LS E2E in CI** — Rename/format/code-action clients are implemented; CI may lack `jdtls`. Set `DESK_JAVA_LS` for full intelligence.
+2. **DAP debugging** — Architecture stub only (`DapSession`); no working debugger until an adapter is wired (`docs/debug/DAP_DESIGN.md`).
+3. **PTY terminal** — Still a job/shell runner, not a full PTY.
+4. **BuildHandle streaming in TUI** — Esc cancels TUI jobs (`desk build` / compile); direct `BuildHandle` live stream UI is next.
+5. **Spring Boot resolve** — Fixture POM exists; full dependency download/run not asserted offline.
+6. **`desk test --watch`** — Flag accepted; continuous watch not implemented.
+7. **Split editors** — Deferred.
+8. **Managed JDK vendors** — Temurin download implemented with checksum when available; other vendors still plan-only.
+9. **Numeric performance SLAs** — Micro-benches print timings; large-file/LSP latency numbers need local profiling.
+10. **Error Prone** — Detection/hints only (compiler plugin), not a standalone runner.
+11. **disk_mtime ReloadConflict overlay** — Detection on save works; proactive on-focus reload prompt still partial.

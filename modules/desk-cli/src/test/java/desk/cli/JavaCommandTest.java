@@ -30,12 +30,12 @@ class JavaCommandTest {
   }
 
   @Test
-  @DisplayName("java install --yes reports not implemented without downloading")
-  void installYesNotImplemented() {
+  @DisplayName("java install without --yes requires consent")
+  void installRequiresConsent() {
     CommandResult result = new JavaCommand().execute(
-        new String[]{"install", "25", "--yes"});
+        new String[]{"install", "25"});
     assertFalse(result.isSuccess());
-    assertEquals("NOT_IMPLEMENTED", result.message());
+    assertEquals("REQUIRES_CONSENT", result.message());
   }
 
   @Test
