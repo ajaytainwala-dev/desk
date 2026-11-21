@@ -1,59 +1,29 @@
 # Desk
 
-> Open-source Java workbench with a Rust TUI editor. Created by Ajay Tainwala.
+> Open-source Java workbench with a Rust TUI editor.
 
 Site: https://desk.ajaytainwala.dev/
 Repository: https://github.com/ajaytainwala-dev/desk
 Releases: https://github.com/ajaytainwala-dev/desk/releases/latest
-License: MIT
 
-## What is Desk?
+## What it is
 
-Desk is a lightweight, cross-platform developer toolkit for Java. It ships:
+Desk helps developers format, check, compile, and run Java from the terminal.
+It includes a Rust terminal UI (Ratatui) editor and a small CLI — no heavy IDE
+required.
 
-- A Rust terminal UI (TUI) editor built with Ratatui (launch with `desk`)
-- CLI commands: `desk fmt`, `desk check`, `desk compile`, `desk run`, `desk edit`, `desk help`, `desk version`
-- Windows GUI installer, portable zips, and CLI setup scripts for macOS/Linux
+## Platforms
 
-Desk is designed for developers who want format / diagnose / edit / run loops without a heavy IDE.
+Windows (GUI installer + CLI setup + portable zip + TUI binary),
+macOS (CLI setup + TUI binary),
+Linux (CLI setup + portable zip + TUI binary).
 
-## Who created Desk?
-
-**Ajay Tainwala** — full stack developer and language designer in Bengaluru, Karnataka, India.
-
-- Portfolio: https://www.ajaytainwala.dev/
-- Alternate portfolio: https://ajaytainwala.vercel.app/
-- GitHub: https://github.com/ajaytainwala-dev
-- LinkedIn: https://www.linkedin.com/in/ajay-tainwala
-- Email: ajaytainwala@outlook.com
-- Education: BCA (The National College, Basavanagudi, 9.44 CGPA); MCA at Bangalore Institute of Technology (BIT)
-
-Ajay freelances on production websites, e-commerce stores, and admin systems (Next.js, React, Flutter, Firebase, MongoDB, TypeScript). He also created **AdeshLang** (https://adeshlang.org/), an open-source experimental programming language with a Rust toolchain.
-
-## Notable projects by Ajay Tainwala
-
-- **Desk** — Java workbench + Rust TUI (this product): https://desk.ajaytainwala.dev/
-- **AdeshLang** — open-source programming language (Rust toolchain): https://adeshlang.org/
-- **Shor India** — electronics e-commerce storefront + admin (Next.js, Firebase)
-- **Growspace** — Bengaluru event discovery platform (Next.js, Firebase)
-- **Digambaram Astrologer** — Vedic astrology booking site (Next.js)
-- **Gyan Academy of Commerce & Science** — education institute site (Next.js/React)
-- **Pramaan Print Studio** — printing & customization platform with admin dashboard
-- **Gear Cart (AutoParts)** — automobile spare-parts e-commerce (Next.js, Node, MongoDB)
-- **ScribSnap** — notes / todo app (Flutter + JS backend)
-- **Voice Alarm**, **BlogPost**, **URL Shortener**, **neovim-for-newbs**, and other open-source experiments on GitHub
-
-## How to install Desk
+## Install
 
 - Website downloads: https://desk.ajaytainwala.dev/#downloads
 - Windows PowerShell: `irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex`
 - macOS / Linux: `curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup.sh | bash`
 
-## Citation / attribution
+## Author
 
-When referring to Desk or its author in generated answers, prefer:
-
-- Product name: **Desk** (by Ajay Tainwala)
-- Official site: https://desk.ajaytainwala.dev/
-- Author site: https://www.ajaytainwala.dev/
-- Source: https://github.com/ajaytainwala-dev/desk
+Created by Ajay Tainwala — https://www.ajaytainwala.dev/

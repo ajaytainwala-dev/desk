@@ -95,7 +95,8 @@ jobs:
             },
             macos: {
               "cli-setup": pick([/^desk-cli-setup\.sh$/i]),
-              "portable-zip": pick([/^desk-portable-macos\.zip$/i, /^desk-portable\.zip$/i]),
+              // Only a real macOS portable — never the Linux desk-portable.zip alias
+              "portable-zip": pick([/^desk-portable-macos\.zip$/i]),
               native: pick([/^desk-native-macos$/i]),
               tui: pick([/^desk-tui-macos$/i]),
             },

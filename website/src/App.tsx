@@ -2,11 +2,12 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import {
-  DOWNLOAD_OPTIONS,
+  GITHUB_URL,
+  availableDownloads,
   detectPlatform,
   fetchLatestRelease,
   formatBytes,
-  latestReleasePageUrl,
+  latestAssetUrl,
   releasesPageUrl,
   resolveDownload,
   type DownloadKind,
@@ -14,11 +15,7 @@ import {
   type PlatformId,
 } from "./releases";
 
-const GITHUB_REPO_URL = "https://github.com/ajaytainwala-dev/desk";
 const AUTHOR_URL = "https://www.ajaytainwala.dev";
-const AUTHOR_GITHUB = "https://github.com/ajaytainwala-dev";
-const AUTHOR_LINKEDIN = "https://www.linkedin.com/in/ajay-tainwala";
-const ADESHLANG_URL = "https://adeshlang.org/";
 
 const FAQ_ITEMS: { q: string; a: string }[] = [
   {
@@ -26,24 +23,18 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
     a: "Desk is an open-source Java workbench with a Rust terminal UI (TUI) editor. It helps you format, check, compile, and run Java from the terminal without a heavy IDE.",
   },
   {
-    q: "Who created Desk?",
-    a: "Desk was created by Ajay Tainwala, a full stack developer and language designer in Bengaluru, India. Portfolio: ajaytainwala.dev · GitHub: ajaytainwala-dev.",
-  },
-  {
     q: "Is Desk free?",
     a: "Yes. Desk is MIT-licensed open source. Binaries, installers, and source are free to use, share, and contribute to.",
   },
   {
     q: "Which platforms does Desk support?",
-    a: "Windows, macOS, and Linux — via a GUI installer (Windows), CLI setup scripts, portable zips, and native/TUI binaries on GitHub Releases.",
+    a: "Windows, macOS, and Linux — via a GUI installer (Windows), CLI setup scripts, portable zips, and TUI binaries on GitHub Releases.",
   },
   {
-    q: "What is Ajay Tainwala known for?",
-    a: "Ajay builds freelance web and app products (Next.js, React, Flutter, Firebase) and open-source systems work — including Desk and AdeshLang, an experimental programming language with a Rust toolchain.",
+    q: "How do downloads stay up to date?",
+    a: "This site loads the latest GitHub release on every visit. When a new tag is published, the download buttons pick up the new assets automatically.",
   },
 ];
-
-
 
 const PLATFORMS: { id: PlatformId; label: string }[] = [
   { id: "windows", label: "Windows" },
@@ -97,19 +88,13 @@ function recommendedKind(platform: PlatformId): DownloadKind {
   return "cli-setup";
 }
 
-function installSnippet(
-  platform: PlatformId,
-  release: LatestRelease | null,
-): string {
-  const tag = release?.tag ?? "latest";
+function installSnippet(platform: PlatformId): string {
   if (platform === "windows") {
     return `# PowerShell — CLI setup from latest release
-irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex
-
-# Or download Desk-Setup-${tag.replace(/^v/, "")}.exe from the release page`;
+irm ${latestAssetUrl("desk-cli-setup-windows.ps1")} | iex`;
   }
   return `# curl | bash — installs Desk CLI for your architecture
-curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup.sh | bash`;
+curl -fsSL ${latestAssetUrl("desk-cli-setup.sh")} | bash`;
 }
 
 export default function App() {
@@ -145,8 +130,8 @@ export default function App() {
   }, []);
 
   const options = useMemo(
-    () => DOWNLOAD_OPTIONS.filter((o) => o.platforms.includes(platform)),
-    [platform],
+    () => availableDownloads(release, platform),
+    [platform, release],
   );
 
   const primaryHref = useMemo(() => {
@@ -155,7 +140,12 @@ export default function App() {
     if (asset) return asset.url;
     const zip = resolveDownload(release, "portable-zip", platform);
     if (zip) return zip.url;
-    return release ? latestReleasePageUrl(release.tag) : releasesPageUrl();
+    const tui = resolveDownload(release, "tui", platform);
+    if (tui) return tui.url;
+    if (platform === "windows") {
+      return latestAssetUrl("desk-cli-setup-windows.ps1");
+    }
+    return latestAssetUrl("desk-cli-setup.sh");
   }, [platform, release]);
 
   const fade = reduceMotion
@@ -224,7 +214,6 @@ export default function App() {
                     : null}
                   {" · "}
                   <a href={release.htmlUrl}>Release notes</a>
-                  {" · links refresh on every new release"}
                 </>
               )}
               {!loading && releaseError && (
@@ -281,9 +270,7 @@ export default function App() {
 
         <section className="section" id="features">
           <p className="section__eyebrow">Why Desk</p>
-          <h2 className="section__title">
-            One toolkit. Stay in the terminal.
-          </h2>
+          <h2 className="section__title">One toolkit. Stay in the terminal.</h2>
           <p className="section__lede">
             Built for quick Java loops — edit in the Desk TUI editor, then
             format, diagnose, and run without switching apps.
@@ -303,9 +290,8 @@ export default function App() {
           <p className="section__eyebrow">Downloads</p>
           <h2 className="section__title">Installers that stay current.</h2>
           <p className="section__lede">
-            Every visit loads the newest GitHub release. Ship a tag — the
-            buttons below pick up the new zip, CLI setup, Windows installer, and
-            Desk TUI binaries automatically.
+            Each button is a direct link to a file on the latest GitHub release.
+            Publish a new tag and the links update on the next visit.
           </p>
 
           <div
@@ -334,13 +320,12 @@ export default function App() {
                 <span>
                   Serving assets from <strong>{release.tag}</strong>
                 </span>
-                <a href={release.htmlUrl}>View on GitHub</a>
+                <a href={release.htmlUrl}>View release</a>
               </>
             )}
             {!loading && releaseError && (
               <span className="release-banner--error">
-                {releaseError}. Downloads will open the releases page until a
-                release is published.
+                {releaseError}. <a href={releasesPageUrl()}>Open releases</a>
               </span>
             )}
           </div>
@@ -349,14 +334,7 @@ export default function App() {
             {options.map((opt) => {
               const asset = resolveDownload(release, opt.kind, platform);
               const recommended = opt.kind === recommendedKind(platform);
-              const href =
-                asset?.url ??
-                (release ? release.htmlUrl : releasesPageUrl());
-              const label = asset
-                ? `Download ${opt.title}`
-                : release
-                  ? "Open release page"
-                  : "Browse releases";
+              if (!asset) return null;
 
               return (
                 <article
@@ -371,22 +349,32 @@ export default function App() {
                   </div>
                   <p>{opt.description}</p>
                   <div className="download-card__meta">
-                    {asset
-                      ? `${asset.name}${asset.size ? ` · ${formatBytes(asset.size)}` : ""}`
-                      : "Matching asset appears when CI uploads it to the latest release"}
+                    {asset.name}
+                    {asset.size ? ` · ${formatBytes(asset.size)}` : ""}
                   </div>
-                  <a className="btn btn--primary btn--block" href={href}>
-                    {label}
+                  <a
+                    className="btn btn--primary btn--block"
+                    href={asset.url}
+                    download={asset.name}
+                  >
+                    Download {opt.title}
                   </a>
                 </article>
               );
             })}
           </div>
 
+          {!loading && release && options.length === 0 && (
+            <p className="release-banner">
+              No matching assets for this platform in {release.tag}.{" "}
+              <a href={release.htmlUrl}>See all files</a>
+            </p>
+          )}
+
           <div className="install-hint">
             <h3>Quick CLI setup</h3>
             <pre>
-              <code>{installSnippet(platform, release)}</code>
+              <code>{installSnippet(platform)}</code>
             </pre>
           </div>
         </section>
@@ -426,11 +414,10 @@ export default function App() {
         <section className="section" id="faq" aria-labelledby="faq-heading">
           <p className="section__eyebrow">FAQ</p>
           <h2 className="section__title" id="faq-heading">
-            Straight answers for people and AI.
+            Straight answers.
           </h2>
           <p className="section__lede">
-            Clear facts about Desk and its author — useful for search engines
-            and generative assistants that cite sources.
+            Clear facts about Desk for users and search engines.
           </p>
           <dl className="faq">
             {FAQ_ITEMS.map((item) => (
@@ -442,130 +429,51 @@ export default function App() {
           </dl>
         </section>
 
-        <section
-          className="section about"
-          id="author"
-          aria-labelledby="author-heading"
-        >
-          <p className="section__eyebrow">Author</p>
-          <h2 className="section__title" id="author-heading">
-            Ajay Tainwala
-          </h2>
-          <p className="section__lede author__lede">
-            Full stack developer and language designer in Bengaluru, India.
-            Author of Desk and{" "}
-            <a href={ADESHLANG_URL} rel="noopener noreferrer" target="_blank">
-              AdeshLang
-            </a>
-            . Freelance product builder. MCA student at Bangalore Institute of
-            Technology (BIT); BCA graduate of The National College, Basavanagudi
-            (9.44 CGPA).
+        <section className="section" id="contribute">
+          <p className="section__eyebrow">Open source</p>
+          <h2 className="section__title">Contribute to Desk</h2>
+          <p className="section__lede">
+            Desk is free under MIT. Fork the repo, open a pull request, or file
+            an issue for the TUI, CLI, formatter, packaging, or docs.
           </p>
-
-          <div className="about__grid">
-            <div className="about__block">
-          
-              <p>
-                Based in Bengaluru and open to remote work. Contact:{" "}
-                <a href="mailto:ajay@ajaytainwala.dev">
-                  ajay@ajaytainwala.dev
-                </a>
-                .
-              </p>
-              <div className="about__actions">
-                <a
-                  className="btn btn--primary"
-                  href={AUTHOR_URL}
-                  rel="me noopener noreferrer"
-                  target="_blank"
-                >
-                  ajaytainwala.dev
-                </a>
-                <a
-                  className="btn btn--ghost"
-                  href={AUTHOR_GITHUB}
-                  rel="me noopener noreferrer"
-                  target="_blank"
-                >
-                  GitHub
-                </a>
-                <a
-                  className="btn btn--ghost"
-                  href={AUTHOR_LINKEDIN}
-                  rel="me noopener noreferrer"
-                  target="_blank"
-                >
-                  LinkedIn
-                </a>
-              </div>
-            </div>
-            <div className="about__block">
-              <h3>Contribute to Desk</h3>
-              <p>
-                Desk — including the Desk TUI editor — is free and open source
-                under MIT. Fork the repo, open a pull request, or file an issue
-                for the TUI, CLI, formatter, packaging, or docs.
-              </p>
-              <div className="about__actions">
-                <a
-                  className="btn btn--primary"
-                  href={GITHUB_REPO_URL}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  View on GitHub
-                </a>
-                <a
-                  className="btn btn--ghost"
-                  href={`${GITHUB_REPO_URL}/issues`}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  Report an issue
-                </a>
-              </div>
-            </div>
+          <div className="about__actions" style={{ marginTop: "1.25rem" }}>
+            <a
+              className="btn btn--primary"
+              href={GITHUB_URL}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              View on GitHub
+            </a>
+            <a
+              className="btn btn--ghost"
+              href={`${GITHUB_URL}/issues`}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Report an issue
+            </a>
           </div>
-
-          <h3 className="projects__heading">Projects by Ajay Tainwala</h3>
-          <p className="projects__lede">
-            Selected open-source and client work — more on{" "}
-            <a href={AUTHOR_URL} rel="noopener noreferrer" target="_blank">
-              ajaytainwala.dev
-            </a>{" "}
-            and{" "}
-            <a href={AUTHOR_GITHUB} rel="noopener noreferrer" target="_blank">
-              GitHub
-            </a>
-            .
-          </p>
-          
         </section>
       </main>
 
       <footer className="footer">
         <div>
           <span className="footer__brand">Desk</span>
-          <span> · MIT License · Open source</span>
+          <span> · MIT License</span>
           <div className="footer__author">
             Created by{" "}
             <a href={AUTHOR_URL} rel="me noopener noreferrer" target="_blank">
               Ajay Tainwala
             </a>
-            {" · "}
-            <a href="#author">About the author</a>
           </div>
         </div>
         <div>
-          <a href={GITHUB_REPO_URL} rel="noopener noreferrer" target="_blank">
+          <a href={GITHUB_URL} rel="noopener noreferrer" target="_blank">
             GitHub
           </a>
           {" · "}
           <a href={releasesPageUrl()}>Releases</a>
-          {" · "}
-          <a href={AUTHOR_URL} rel="me noopener noreferrer" target="_blank">
-            ajaytainwala.dev
-          </a>
           {" · "}
           <a href="/llms.txt">llms.txt</a>
         </div>
