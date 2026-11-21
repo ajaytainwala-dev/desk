@@ -1,6 +1,6 @@
 # Desk
 
-> Open-source Java workbench with a Rust TUI editor.
+> Open-source Java 25 development workbench with a Rust Ratatui TUI editor.
 
 Site: https://desk.ajaytainwala.dev/
 Repository: https://github.com/ajaytainwala-dev/desk
@@ -8,9 +8,20 @@ Releases: https://github.com/ajaytainwala-dev/desk/releases/latest
 
 ## What it is
 
-Desk helps developers format, check, compile, and run Java from the terminal.
-It includes a Rust terminal UI (Ratatui) editor and a small CLI — no heavy IDE
-required.
+Desk combines a terminal UI editor with a Java CLI for:
+
+- Workspace management and multi-tab editing
+- Java 25 baseline with per-workspace JDK pins (Temurin managed installs supported)
+- Maven / Gradle / javac build and test orchestration with job cancel
+- Live Eclipse JDT Language Server (completion, hover, diagnostics, workspace edits)
+- Real JDI/JDWP debugging via `desk debug run` (CLI; no TUI debug panel in v0.1)
+- Format, check, compile, run, Git helpers, and `desk doctor`
+
+## Honest limits (v0.1)
+
+- Interactive TUI debug panel is not shipped; F5 remains Run
+- External DAP adapters are initialize-only
+- `desk test --watch` is rejected until implemented
 
 ## Platforms
 

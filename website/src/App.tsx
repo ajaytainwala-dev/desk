@@ -20,7 +20,15 @@ const AUTHOR_URL = "https://www.ajaytainwala.dev";
 const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "What is Desk?",
-    a: "Desk is an open-source Java workbench with a Rust terminal UI (TUI) editor. It helps you format, check, compile, and run Java from the terminal without a heavy IDE.",
+    a: "Desk is an open-source Java development workbench: a Rust Ratatui TUI editor plus a Java CLI for workspaces, JDK management, Maven/Gradle builds, live JDT Language Server support, and JDI debugging.",
+  },
+  {
+    q: "What Java versions does Desk target?",
+    a: "Java 25 is the primary LTS baseline for Desk itself and new projects. You can pin other installed JDKs per workspace without changing system JAVA_HOME.",
+  },
+  {
+    q: "Does Desk include a full IDE debugger UI?",
+    a: "v0.1 ships real JDI/JDWP debugging through desk debug run on the CLI. An interactive TUI debug panel is not included yet — F5 in the editor still runs the program.",
   },
   {
     q: "Is Desk free?",
@@ -44,28 +52,69 @@ const PLATFORMS: { id: PlatformId; label: string }[] = [
 
 const FEATURES = [
   {
-    title: "Desk TUI editor",
-    body: "A focused Rust terminal UI (Ratatui) — open files fast, edit Java without leaving the keyboard.",
+    title: "Rust TUI workbench",
+    body: "Multi-tab Ratatui editor with save safety, explorer, and job cancel — stay in the keyboard loop.",
   },
   {
-    title: "Format & check",
-    body: "desk fmt and desk check catch style and compile errors before you push.",
+    title: "Java 25 + JDK pins",
+    body: "Primary LTS baseline is Java 25. Pin Temurin or local JDKs per workspace without mutating system JAVA_HOME.",
   },
   {
-    title: "Compile & run",
-    body: "Lightweight compile and run helpers via the JDK — no heavy IDE required.",
+    title: "Maven & Gradle builds",
+    body: "desk build / test detect Maven or Gradle (or fall back to javac) and can cancel running jobs.",
+  },
+  {
+    title: "Live JDT Language Server",
+    body: "Point DESK_JAVA_LS at Eclipse JDT LS for completion, hover, diagnostics, and refactor edits inside the workspace.",
+  },
+  {
+    title: "JDI debugging (CLI)",
+    body: "desk debug run launches real JDWP/JDI sessions — breakpoints, stack, and locals — without a fake TUI debug panel.",
+  },
+  {
+    title: "Format, check, doctor",
+    body: "desk fmt, check, compile, run, and doctor keep day-to-day Java hygiene close to the terminal.",
+  },
+];
+
+const USES = [
+  {
+    title: "Open a project workspace",
+    body: "desk . or desk open ./my-app loads the folder as a workspace with explorer, tabs, and JDK pin support.",
+  },
+  {
+    title: "Scaffold a Java 25 app",
+    body: "desk new my-app --template maven creates a starter project on the Java 25 baseline.",
+  },
+  {
+    title: "Build and test with cancel",
+    body: "desk build and desk test drive Maven/Gradle; Esc/F7 stop hanging processes without orphaning JVMs.",
+  },
+  {
+    title: "Language intelligence",
+    body: "With JDT LS installed, use desk lsp complete/hover or the TUI overlays for navigation and edits.",
+  },
+  {
+    title: "Debug on the CLI",
+    body: "desk debug run --main Demo --bp 12 --src Demo.java runs a real JDI session for quick breakpoint checks.",
+  },
+  {
+    title: "Health-check the toolchain",
+    body: "desk java doctor and desk doctor surface missing JDKs, project layout, Git, and LSP readiness.",
   },
 ];
 
 const CLI_COMMANDS: { cmd: string; desc: string }[] = [
-  { cmd: "desk", desc: "Launch the Desk TUI editor" },
-  { cmd: "desk edit Main.java", desc: "Open a file in the TUI" },
-  { cmd: "desk fmt Main.java", desc: "Format Java in place" },
-  { cmd: "desk check Main.java", desc: "Report compile diagnostics" },
-  { cmd: "desk compile Main.java", desc: "Compile with javax.tools" },
-  { cmd: "desk run Main", desc: "Run a compiled class" },
-  { cmd: "desk help", desc: "List CLI commands" },
-  { cmd: "desk version", desc: "Print version" },
+  { cmd: "desk / desk .", desc: "Launch the TUI on the current workspace" },
+  { cmd: "desk open <path>", desc: "Open a folder workspace or file" },
+  { cmd: "desk new <name>", desc: "Create a project (default Java 25)" },
+  { cmd: "desk java use 25", desc: "Pin JDK 25 for this workspace" },
+  { cmd: "desk build / desk test", desc: "Maven, Gradle, or javac build & test" },
+  { cmd: "desk lsp diagnose", desc: "Language server / javac diagnostics" },
+  { cmd: "desk debug run --main C --bp N", desc: "JDI/JDWP CLI debug session" },
+  { cmd: "desk fmt / desk check", desc: "Format or compile-check a file" },
+  { cmd: "desk doctor", desc: "Aggregate JDK / project / LSP health" },
+  { cmd: "desk git status", desc: "Git helpers (no credential logging)" },
 ];
 
 const TUI_COMMANDS: { cmd: string; desc: string }[] = [
@@ -74,11 +123,11 @@ const TUI_COMMANDS: { cmd: string; desc: string }[] = [
   { cmd: "Ctrl+Q", desc: "Quit the editor" },
   { cmd: "i / Esc / v", desc: "Insert, normal, and visual modes" },
   { cmd: "Ctrl+F / Ctrl+H", desc: "Find and replace" },
-  { cmd: "Ctrl+J", desc: "Toggle integrated terminal" },
+  { cmd: "Ctrl+J", desc: "Toggle integrated terminal / job panel" },
   { cmd: "F3 / F8 / F4", desc: "Explorer, output panel, line numbers" },
-  { cmd: "F5 / F6 / F9 / F10", desc: "Run, compile, format, check" },
-  { cmd: "F7", desc: "Stop the running Java job" },
-  { cmd: ":w / :wq / :q", desc: "Save, save & quit, quit (command mode)" },
+  { cmd: "F5 / F6 / F9 / F10", desc: "Run, compile, format, check (F5 is Run, not debug)" },
+  { cmd: "F7 / Esc", desc: "Cancel the running build/run job" },
+  { cmd: ":build / :w / :q", desc: "Build, save, quit (command mode)" },
   { cmd: ":fmt / :check / :help", desc: "Format, check, and help commands" },
   { cmd: "Alt+F / E / V / R", desc: "Open File, Edit, View, Run menus" },
 ];
@@ -169,6 +218,7 @@ export default function App() {
         </a>
         <nav className="nav__links" aria-label="Primary">
           <a href="#features">Features</a>
+          <a href="#uses">Uses</a>
           <a href="#downloads">Downloads</a>
           <a href="#faq">FAQ</a>
           <a className="nav__cta" href="#downloads">
@@ -182,11 +232,11 @@ export default function App() {
           <motion.div className="hero__copy" {...fade}>
             <h1 className="hero__brand">Desk</h1>
             <p className="hero__headline">
-              Java workbench with a Desk TUI editor.
+              Java 25 workbench. Terminal-first.
             </p>
             <p className="hero__lede">
-              Format, check, compile, and edit in the terminal — a lightweight
-              toolkit built around a Rust TUI that stays out of your way.
+              Rust TUI editor, workspace JDK pins, Maven/Gradle builds, live
+              JDT LS intelligence, and real JDI debugging from the CLI.
             </p>
             <div className="hero__actions">
               <a className="btn btn--primary" href={primaryHref}>
@@ -231,32 +281,32 @@ export default function App() {
                 <span className="terminal__dot" />
                 <span className="terminal__dot" />
                 <span className="terminal__dot" />
-                <span className="terminal__title">desk TUI — Main.java</span>
+                <span className="terminal__title">desk — workspace</span>
               </div>
               <div className="terminal__body">
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
-                  <span className="terminal__cmd">desk</span>
+                  <span className="terminal__cmd">desk java use 25</span>
                 </p>
                 <p className="terminal__line terminal__out">
-                  Desk TUI editor · Ratatui · open Main.java
+                  Pinned <span className="terminal__hl">JDK 25</span> for this
+                  workspace
                 </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
-                  <span className="terminal__cmd">desk check Main.java</span>
+                  <span className="terminal__cmd">desk build</span>
                 </p>
                 <p className="terminal__line terminal__out">
-                  Main.java:12: error: cannot find symbol
-                </p>
-                <p className="terminal__line terminal__err">
-                  {"  "}symbol: variable cout
+                  Maven · BUILD SUCCESS
                 </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
-                  <span className="terminal__cmd">desk fmt Main.java</span>
+                  <span className="terminal__cmd">
+                    desk debug run --main Demo --bp 12
+                  </span>
                 </p>
                 <p className="terminal__line terminal__out">
-                  Formatted <span className="terminal__hl">Main.java</span>
+                  JDI · breakpoint hit · locals ready
                 </p>
                 <p className="terminal__line">
                   <span className="terminal__prompt">$</span>{" "}
@@ -270,17 +320,35 @@ export default function App() {
 
         <section className="section" id="features">
           <p className="section__eyebrow">Why Desk</p>
-          <h2 className="section__title">One toolkit. Stay in the terminal.</h2>
+          <h2 className="section__title">Workbench features that are real.</h2>
           <p className="section__lede">
-            Built for quick Java loops — edit in the Desk TUI editor, then
-            format, diagnose, and run without switching apps.
+            v0.1 covers the terminal loop for Java 25 projects — editor, builds,
+            language server, and CLI debugging — without claiming unfinished UI.
           </p>
-          <div className="features">
+          <div className="features features--wide">
             {FEATURES.map((f) => (
               <article className="feature" key={f.title}>
                 <hr className="feature__rule" />
                 <h3>{f.title}</h3>
                 <p>{f.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="section" id="uses">
+          <p className="section__eyebrow">Uses</p>
+          <h2 className="section__title">How people use Desk day to day.</h2>
+          <p className="section__lede">
+            Practical workflows for opening projects, building, diagnosing, and
+            debugging — all from the same toolkit.
+          </p>
+          <div className="features features--wide">
+            {USES.map((u) => (
+              <article className="feature" key={u.title}>
+                <hr className="feature__rule" />
+                <h3>{u.title}</h3>
+                <p>{u.body}</p>
               </article>
             ))}
           </div>
@@ -382,12 +450,12 @@ export default function App() {
         <section className="section" id="commands">
           <p className="section__eyebrow">Commands</p>
           <h2 className="section__title">
-            CLI and TUI that fit a muscle memory.
+            CLI workflows and TUI shortcuts.
           </h2>
           <p className="section__lede">
-            Run bare <code>desk</code> for the Desk TUI editor, pass a
-            subcommand for scripts, or use the in-editor shortcuts once you are
-            inside the TUI (press <code>F1</code> anytime).
+            Run bare <code>desk</code> for the TUI, or use subcommands for
+            builds, LSP, and JDI debug. Inside the editor, press <code>F1</code>{" "}
+            anytime for help.
           </p>
 
           <h3 className="commands__heading">CLI</h3>
