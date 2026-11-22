@@ -421,31 +421,79 @@ impl LspBridge {
     }
 }
 
+/// Pinned JDT LS version, kept in sync with `JdtLsProvisioner.VERSION`.
+const JDT_LS_VERSION: &str = "1.57.0";
+
+/// Executable names for the JDT LS launcher on the current OS.
+fn jdtls_exe_names() -> Vec<&'static str> {
+    if cfg!(windows) {
+        vec!["jdtls.exe", "jdtls.bat"]
+    } else {
+        vec!["jdtls"]
+    }
+}
+
+/// PATH list separators for the current OS.
+fn path_separators() -> &'static [char] {
+    if cfg!(windows) {
+        &[';']
+    } else {
+        &[':']
+    }
+}
+
 fn discover_server() -> Option<PathBuf> {
+    // 1. Explicit override via env var.
     if let Ok(env) = std::env::var("DESK_JAVA_LS") {
         let p = PathBuf::from(env.trim());
         if p.is_file() {
             return Some(p);
         }
     }
+
     let home = dirs_next_home();
-    let mut candidates = vec![
-        PathBuf::from("/usr/bin/jdtls"),
-        PathBuf::from("/usr/local/bin/jdtls"),
-    ];
-    if let Some(h) = home {
-        candidates.push(h.join(".desk/jdt-language-server/bin/jdtls"));
-        candidates.push(h.join(".local/share/jdtls/bin/jdtls"));
+
+    // 2. Locations provisioned by desk itself (Java-side JdtLsProvisioner) and
+    //    common manual install locations.
+    let mut candidate_dirs: Vec<PathBuf> = Vec::new();
+    if let Some(h) = &home {
+        // Java-side provisioner default: ~/.desk/jdtls/<VERSION>/bin/{jdtls,jdtls.exe,jdtls.bat}
+        candidate_dirs.push(h.join(format!(".desk/jdtls/{}/bin", JDT_LS_VERSION)));
+        candidate_dirs.push(h.join(".desk/jdt-language-server/bin"));
+        candidate_dirs.push(h.join(".local/share/jdtls/bin"));
     }
-    if let Ok(path) = std::env::var("PATH") {
-        for entry in path.split(':') {
-            let p = PathBuf::from(entry).join("jdtls");
+    // System-wide locations (Unix only).
+    if !cfg!(windows) {
+        candidate_dirs.push(PathBuf::from("/usr/bin"));
+        candidate_dirs.push(PathBuf::from("/usr/local/bin"));
+    }
+
+    for dir in &candidate_dirs {
+        for name in jdtls_exe_names() {
+            let p = dir.join(name);
             if p.is_file() {
                 return Some(p);
             }
         }
     }
-    candidates.into_iter().find(|p| p.is_file())
+
+    // 3. Search PATH using the OS-specific separator.
+    if let Ok(path) = std::env::var("PATH") {
+        for entry in path.split(path_separators()) {
+            if entry.is_empty() {
+                continue;
+            }
+            let dir = PathBuf::from(entry);
+            for name in jdtls_exe_names() {
+                let p = dir.join(name);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn dirs_next_home() -> Option<PathBuf> {
