@@ -122,15 +122,17 @@ jobs:
 
   build-portable:
     name: Build portable zip
-    needs: validate
+    needs: [validate, build-rust]
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             platform: linux
+            tui_artifact: desk-tui-ubuntu-latest
           - os: macos-latest
             platform: macos
+            tui_artifact: desk-tui-macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -141,8 +143,21 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Build jlink portable distribution
-        run: bash packaging/jlink/build-jlink.sh dist/desk-portable
+      - name: Download platform TUI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.tui_artifact }}
+          path: dist/tui
+      - name: Build jlink portable distribution (with TUI)
+        run: |
+          TUI=$(find dist/tui -type f \( -name 'desk-tui-*' -o -name desk -o -name desk.exe \) | head -1)
+          if [ -z "$TUI" ]; then
+            echo "Error: TUI binary missing for ${{ matrix.platform }}" >&2
+            ls -laR dist/tui || true
+            exit 1
+          fi
+          DESK_TUI_BINARY="$TUI" bash packaging/jlink/build-jlink.sh dist/desk-portable
+          test -x dist/desk-portable/bin/desk-tui
       - name: Zip portable distribution
         run: |
           chmod +x packaging/installers/build-portable-zip.sh
@@ -221,9 +236,21 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Build jlink portable (Windows)
+      - name: Download Windows TUI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: desk-tui-windows-latest
+          path: dist/tui
+      - name: Build jlink portable (Windows, with TUI)
         shell: pwsh
-        run: ./packaging/jlink/build-jlink.ps1 dist/desk-portable
+        run: |
+          $tui = Get-ChildItem dist/tui -File | Select-Object -First 1
+          if (-not $tui) { throw "Windows TUI binary missing" }
+          $env:DESK_TUI_BINARY = $tui.FullName
+          ./packaging/jlink/build-jlink.ps1 dist/desk-portable
+          if (-not (Test-Path "dist/desk-portable/bin/desk-tui.exe")) {
+            throw "desk-tui.exe was not bundled into portable bin/"
+          }
       - name: Zip Windows portable
         shell: pwsh
         run: |
@@ -233,18 +260,13 @@ jobs:
           # Windows runners do not ship Info-ZIP; use tar's zip writer instead.
           tar -a -cf $zip -C dist desk-portable
           Get-Item $zip | Format-List FullName, Length
-      - name: Download Windows TUI binary
-        uses: actions/download-artifact@v4
-        with:
-          name: desk-tui-windows-latest
-          path: dist/tui
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis -y --no-progress
       - name: Build GUI installer
         shell: pwsh
         run: |
-          $tui = Get-ChildItem dist/tui -Filter *.exe | Select-Object -First 1
+          $tui = Get-ChildItem dist/tui -File | Select-Object -First 1
           if (-not $tui) { throw "Windows TUI binary missing" }
           ./packaging/installers/build-windows-installer.ps1 `
             -Version "${{ needs.validate.outputs.version }}" `
