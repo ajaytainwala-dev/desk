@@ -79,9 +79,9 @@ jobs:
       - name: Verify Maven Wrapper
         run: bash .github/scripts/mvnw-retry.sh -v
       - name: Compile all modules
-        run: bash mvnw -q -B compile
+        run: bash .github/scripts/mvnw-retry.sh -q -B compile
       - name: Run unit tests
-        run: bash mvnw -B test
+        run: bash .github/scripts/mvnw-retry.sh -B test
       - name: Package
         run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
       - name: Stage CLI uber JAR for portable packaging
@@ -119,10 +119,10 @@ jobs:
           java-version: '25'
           cache: maven
       - name: Compile with warnings
-        run: bash mvnw -B -Pstrict-warnings compile
+        run: bash .github/scripts/mvnw-retry.sh -B -Pstrict-warnings compile
       - name: Dependency inventory (informational)
         run: |
-          bash mvnw -B -q dependency:tree -Dverbose=false | tee dependency-tree.txt | tail -n 40
+          bash .github/scripts/mvnw-retry.sh -B -q dependency:tree -Dverbose=false | tee dependency-tree.txt | tail -n 40
           echo "For vulnerability alerts, enable GitHub Dependabot on this repository."
 
   rust-build:
@@ -191,7 +191,7 @@ jobs:
           DESK_JAVA_LS: ${{ steps.jdtls.outputs.launcher }}
           DESK_LSP_LOG: "1"
         run: |
-          bash mvnw -B -pl modules/desk-java -am test -Dtest=LiveJdtLsIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false
+          bash .github/scripts/mvnw-retry.sh -B -pl modules/desk-java -am test -Dtest=LiveJdtLsIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false
           # Fail if the live test was skipped despite DESK_JDTLS_CI
           REPORT=modules/desk-java/target/surefire-reports/desk.java.lsp.LiveJdtLsIntegrationTest.txt
           test -f "$REPORT"
@@ -212,7 +212,7 @@ jobs:
           java-version: '25'
           cache: maven
       - name: Run JDI debugger E2E
-        run: bash mvnw -B -pl modules/desk-java -am test -Dtest=JdiDebuggerE2ETest -Dsurefire.failIfNoSpecifiedTests=false
+        run: bash .github/scripts/mvnw-retry.sh -B -pl modules/desk-java -am test -Dtest=JdiDebuggerE2ETest -Dsurefire.failIfNoSpecifiedTests=false
 
   package:
     name: Package (jlink portable)
