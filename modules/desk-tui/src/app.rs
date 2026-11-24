@@ -1779,16 +1779,38 @@ impl App {
         let exe = std::env::current_exe().ok()?;
         let mut dir = exe.parent()?.to_path_buf();
         for _ in 0..10 {
-            let candidates = [
+            let stable = [
+                dir.join("lib").join("desk-cli.jar"),
                 dir.join("modules")
                     .join("desk-cli")
                     .join("target")
                     .join("desk-cli-0.1.0-SNAPSHOT.jar"),
                 dir.join("lib").join("desk-cli-0.1.0-SNAPSHOT.jar"),
             ];
-            for candidate in candidates {
+            for candidate in stable {
                 if candidate.is_file() {
                     return Some(candidate);
+                }
+            }
+            // Any shaded desk-cli-*.jar under lib/ (release version bumps).
+            let lib_dir = dir.join("lib");
+            if lib_dir.is_dir()
+                && let Ok(entries) = std::fs::read_dir(&lib_dir)
+            {
+                let mut matches: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| {
+                                n.starts_with("desk-cli-") && n.ends_with(".jar") && !n.contains("original")
+                            })
+                    })
+                    .collect();
+                matches.sort();
+                if let Some(found) = matches.into_iter().next_back() {
+                    return Some(found);
                 }
             }
             dir = dir.parent()?.to_path_buf();

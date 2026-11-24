@@ -150,6 +150,14 @@ if (-not $uberJar) {
 Copy-Item $uberJar.FullName -Destination (Join-Path $LibDir "desk-cli.jar") -Force
 Write-Host "Copied: $($uberJar.Name) -> desk-cli.jar"
 
+# Optional: bundle a prebuilt TUI binary as bin/desk-tui.exe (env DESK_TUI_BINARY).
+$tuiBinary = $env:DESK_TUI_BINARY
+if ($tuiBinary -and (Test-Path $tuiBinary)) {
+  $tuiDest = Join-Path $BinDir "desk-tui.exe"
+  Copy-Item $tuiBinary $tuiDest -Force
+  Write-Host "Bundled TUI: $tuiDest"
+}
+
 # Copy dependency JARs that aren't shaded into the uber JAR
 # (shade plugin embeds them, so we only need the uber JAR)
 Write-Host "All dependencies are embedded in the uber JAR."
@@ -164,6 +172,13 @@ $launchShell = @'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
 APP_JAR="$SCRIPT_DIR/../lib/desk-cli.jar"
+if [ -z "${DESK_TUI:-}" ] && [ -x "$SCRIPT_DIR/desk-tui" ]; then
+  DESK_TUI="$SCRIPT_DIR/desk-tui"
+  export DESK_TUI
+elif [ -z "${DESK_TUI:-}" ] && [ -x "$SCRIPT_DIR/desk-tui.exe" ]; then
+  DESK_TUI="$SCRIPT_DIR/desk-tui.exe"
+  export DESK_TUI
+fi
 
 if [ ! -x "$RUNTIME_JAVA" ]; then
   echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
@@ -188,6 +203,7 @@ setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 set "RUNTIME_JAVA=%SCRIPT_DIR%..\runtime\bin\java.exe"
 set "APP_JAR=%SCRIPT_DIR%..\lib\desk-cli.jar"
+if not defined DESK_TUI if exist "%SCRIPT_DIR%desk-tui.exe" set "DESK_TUI=%SCRIPT_DIR%desk-tui.exe"
 
 if not exist "%RUNTIME_JAVA%" (
     echo Error: runtime Java not found at %RUNTIME_JAVA% >&2
@@ -215,8 +231,9 @@ Directory layout:
   bin/
     desk        - Shell launcher (Git Bash, WSL, Linux, macOS)
     desk.cmd    - Windows command launcher
+    desk-tui.exe - Native TUI editor (when bundled)
   lib/
-    desk-cli-*.jar   - Application JAR (all dependencies embedded)
+    desk-cli.jar   - Application JAR (all dependencies embedded)
   runtime/
     Custom JRE (jlink image) - contains only the JDK modules needed by Desk
   config/
