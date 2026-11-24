@@ -69,7 +69,6 @@ echo "Output: $OUTPUT_EXE"
   -H:ReflectionConfigurationFiles="$REPO_ROOT/packaging/native-image/reflect-config.json" \
   -H:ResourceConfigurationFiles="$REPO_ROOT/packaging/native-image/resource-config.json" \
   -H:JNIConfigurationFiles="$REPO_ROOT/packaging/native-image/jni-config.json" \
-  -H:ProxyConfigurationFiles="$REPO_ROOT/packaging/native-image/proxy-config.json" \
   -H:+ReportExceptionStackTraces \
   -H:+ReportUnsupportedElementsAtRuntime \
   desk.cli.Main

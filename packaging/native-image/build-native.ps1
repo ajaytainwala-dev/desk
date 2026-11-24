@@ -84,7 +84,6 @@ Write-Host "Output: $outputExe"
   -H:ReflectionConfigurationFiles="$RepoRoot\packaging\native-image\reflect-config.json" `
   -H:ResourceConfigurationFiles="$RepoRoot\packaging\native-image\resource-config.json" `
   -H:JNIConfigurationFiles="$RepoRoot\packaging\native-image\jni-config.json" `
-  -H:ProxyConfigurationFiles="$RepoRoot\packaging\native-image\proxy-config.json" `
   -H:+ReportExceptionStackTraces `
   -H:+ReportUnsupportedElementsAtRuntime `
   desk.cli.Main

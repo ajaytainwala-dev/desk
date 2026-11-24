@@ -60,8 +60,8 @@ jobs:
           if command -v native-image >/dev/null 2>&1; then
             native-image --version
           else
-            gu install native-image || true
-            native-image --version
+            echo "Error: native-image not found. Ensure GraalVM JDK with native-image component is installed." >&2
+            exit 1
           fi
       - name: Build all modules
         run: bash .github/scripts/mvnw-retry.sh -B -DskipTests package
