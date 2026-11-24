@@ -148,11 +148,12 @@ jobs:
         with:
           name: ${{ matrix.tui_artifact }}
           path: dist/tui
-      - name: Build jlink portable distribution
+      - name: Build jlink portable distribution (with TUI)
         run: |
-          TUI=$(ls dist/tui/desk-tui-* 2>/dev/null | head -1 || true)
+          TUI=$(find dist/tui -type f \( -name 'desk-tui-*' -o -name desk -o -name desk.exe \) | head -1)
           if [ -z "$TUI" ]; then
-            echo "Error: TUI artifact missing for ${{ matrix.platform }}" >&2
+            echo "Error: TUI binary missing for ${{ matrix.platform }}" >&2
+            ls -laR dist/tui || true
             exit 1
           fi
           DESK_TUI_BINARY="$TUI" bash packaging/jlink/build-jlink.sh dist/desk-portable
@@ -240,15 +241,15 @@ jobs:
         with:
           name: desk-tui-windows-latest
           path: dist/tui
-      - name: Build jlink portable (Windows)
+      - name: Build jlink portable (Windows, with TUI)
         shell: pwsh
         run: |
-          $tui = Get-ChildItem dist/tui -Filter *.exe | Select-Object -First 1
+          $tui = Get-ChildItem dist/tui -File | Select-Object -First 1
           if (-not $tui) { throw "Windows TUI binary missing" }
           $env:DESK_TUI_BINARY = $tui.FullName
           ./packaging/jlink/build-jlink.ps1 dist/desk-portable
-          if (-not (Test-Path dist/desk-portable/bin/desk-tui.exe)) {
-            throw "desk-tui.exe was not bundled into portable layout"
+          if (-not (Test-Path "dist/desk-portable/bin/desk-tui.exe")) {
+            throw "desk-tui.exe was not bundled into portable bin/"
           }
       - name: Zip Windows portable
         shell: pwsh
@@ -265,7 +266,7 @@ jobs:
       - name: Build GUI installer
         shell: pwsh
         run: |
-          $tui = Get-ChildItem dist/tui -Filter *.exe | Select-Object -First 1
+          $tui = Get-ChildItem dist/tui -File | Select-Object -First 1
           if (-not $tui) { throw "Windows TUI binary missing" }
           ./packaging/installers/build-windows-installer.ps1 `
             -Version "${{ needs.validate.outputs.version }}" `

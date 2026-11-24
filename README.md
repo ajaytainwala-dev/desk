@@ -112,6 +112,8 @@ curl -fsSL https://github.com/ajaytainwala-dev/desk/releases/latest/download/des
 irm https://github.com/ajaytainwala-dev/desk/releases/latest/download/desk-cli-setup-windows.ps1 | iex
 ```
 
+The CLI setup installs the portable runtime under `~/.local/share/desk` (or `%LOCALAPPDATA%\Desk` on Windows), puts a `desk` wrapper on your PATH, and installs the native `desk-tui` editor beside it. After install, `desk version` and `desk help` should work; bare `desk` launches the TUI.
+
 ## Author
 
 Created by [Ajay Tainwala](https://www.ajaytainwala.dev).

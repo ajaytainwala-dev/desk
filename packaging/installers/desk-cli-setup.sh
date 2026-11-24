@@ -9,7 +9,7 @@ set -euo pipefail
 
 REPO="${DESK_REPO:-ajaytainwala-dev/desk}"
 INSTALL_DIR="${DESK_INSTALL_DIR:-$HOME/.local/bin}"
-SHARE_DIR="${DESK_SHARE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/desk}"
+SHARE_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/desk"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 echo "=== Desk CLI setup ==="
@@ -43,8 +43,7 @@ esac
 
 echo "Platform: $PLATFORM ($ARCH_TAG)"
 echo "Install dir: $INSTALL_DIR"
-echo "Share dir: $SHARE_DIR"
-mkdir -p "$INSTALL_DIR" "$SHARE_DIR/bin"
+mkdir -p "$INSTALL_DIR" "$SHARE_ROOT"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -129,49 +128,95 @@ if [ -z "$ASSET" ]; then
   exit 1
 fi
 
+# Resolve the real portable root after unzip. Release zips nest under desk-portable/.
+find_portable_root() {
+  local root="$1"
+  if [ -x "$root/bin/desk" ] && [ -d "$root/runtime" ]; then
+    printf '%s\n' "$root"
+    return 0
+  fi
+  local nested
+  for nested in "$root"/desk-portable "$root"/*/ ; do
+    [ -d "$nested" ] || continue
+    if [ -x "$nested/bin/desk" ] && [ -d "$nested/runtime" ]; then
+      printf '%s\n' "$nested"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_tui_into() {
+  local dest_dir="$1"
+  mkdir -p "$dest_dir"
+  local tui_asset="desk-tui-${PLATFORM}"
+  if download_asset "$tui_asset"; then
+    cp "$TMP/$tui_asset" "$dest_dir/desk-tui"
+    chmod +x "$dest_dir/desk-tui"
+    echo "Installed TUI: $dest_dir/desk-tui"
+    return 0
+  fi
+  echo "Warning: $tui_asset not available — TUI launch may be unavailable until it is installed." >&2
+  return 1
+}
+
+write_path_wrapper() {
+  local portable_bin="$1"
+  local tui_bin="$2"
+  cat > "$INSTALL_DIR/desk" << EOF
+#!/bin/sh
+# Desk CLI wrapper installed by desk-cli-setup.sh
+export DESK_TUI="\${DESK_TUI:-$tui_bin}"
+exec "$portable_bin" "\$@"
+EOF
+  chmod +x "$INSTALL_DIR/desk"
+}
+
 if [[ "$ASSET" == *.zip ]]; then
   need unzip
   unzip -q "$TMP/$ASSET" -d "$TMP/extract"
+
+  PORTABLE_ROOT=""
   if PORTABLE_ROOT="$(find_portable_root "$TMP/extract")"; then
-    install_portable_root "$PORTABLE_ROOT"
+    echo "Portable root: $PORTABLE_ROOT"
+    rm -rf "$SHARE_ROOT/portable"
+    mkdir -p "$SHARE_ROOT"
+    cp -R "$PORTABLE_ROOT" "$SHARE_ROOT/portable"
+    install_tui_into "$SHARE_ROOT/portable/bin" || true
+    # Prefer bundled desk-tui; fall back to any existing path.
+    TUI_PATH="$SHARE_ROOT/portable/bin/desk-tui"
+    if [ ! -x "$TUI_PATH" ]; then
+      TUI_PATH="$SHARE_ROOT/portable/bin/desk-tui"
+    fi
+    write_path_wrapper "$SHARE_ROOT/portable/bin/desk" "$TUI_PATH"
   elif [ -x "$TMP/extract/desk" ]; then
     cp "$TMP/extract/desk" "$INSTALL_DIR/desk"
     chmod +x "$INSTALL_DIR/desk"
   else
-    FOUND="$(find "$TMP/extract" -type f -name desk | head -1 || true)"
+    FOUND="$(find "$TMP/extract" -type f \( -name desk -o -name desk-tui \) | head -1 || true)"
     if [ -z "$FOUND" ]; then
-      echo "Error: zip did not contain a desk binary or portable layout" >&2
+      echo "Error: zip did not contain a desk portable layout or binary" >&2
       exit 1
     fi
-    # Last resort: only copy a native binary, never a bare shell launcher alone.
-    if head -c 4 "$FOUND" | grep -q $'\x7fELF' \
-      || head -c 4 "$FOUND" | od -An -tx1 | grep -qi 'fe ed fa'; then
-      cp "$FOUND" "$INSTALL_DIR/desk"
-      chmod +x "$INSTALL_DIR/desk"
-    else
-      echo "Error: zip contained a desk launcher without its runtime/lib tree" >&2
+    # Only copy a standalone binary when it is not the Java shell launcher alone.
+    if head -c 2 "$FOUND" | grep -q $'#!'; then
+      echo "Error: zip contained a launcher script without its runtime. Re-download desk-portable-${PLATFORM}.zip" >&2
       exit 1
     fi
+    cp "$FOUND" "$INSTALL_DIR/desk"
+    chmod +x "$INSTALL_DIR/desk"
   fi
 else
+  # Standalone native / TUI asset — install as desk, and still try to fetch TUI name.
   cp "$TMP/$ASSET" "$INSTALL_DIR/desk"
   chmod +x "$INSTALL_DIR/desk"
-fi
-
-# Always try to install the Rust TUI alongside the CLI (named desk-tui to avoid
-# colliding with the CLI launcher script also called desk).
-TUI_ASSET="desk-tui-${PLATFORM}"
-if download_asset "$TUI_ASSET"; then
-  cp "$TMP/$TUI_ASSET" "$SHARE_DIR/bin/desk-tui"
-  chmod +x "$SHARE_DIR/bin/desk-tui"
-  # Also place a copy inside portable bin when that layout exists.
-  if [ -d "$SHARE_DIR/portable/bin" ]; then
-    cp "$SHARE_DIR/bin/desk-tui" "$SHARE_DIR/portable/bin/desk-tui"
-    chmod +x "$SHARE_DIR/portable/bin/desk-tui"
+  if [[ "$ASSET" == desk-tui-* ]]; then
+    cp "$INSTALL_DIR/desk" "$INSTALL_DIR/desk-tui"
+    chmod +x "$INSTALL_DIR/desk-tui"
+    echo "Note: installed TUI-only binary. CLI commands need desk-portable-${PLATFORM}.zip." >&2
+  else
+    install_tui_into "$INSTALL_DIR" || true
   fi
-  echo "Installed TUI: $SHARE_DIR/bin/desk-tui"
-else
-  echo "Warning: $TUI_ASSET not found — 'desk' (no args) needs DESK_TUI or a built TUI binary." >&2
 fi
 
 case ":$PATH:" in
@@ -188,6 +233,6 @@ echo "Installed: $INSTALL_DIR/desk"
 if "$INSTALL_DIR/desk" version >/dev/null 2>&1; then
   "$INSTALL_DIR/desk" version || true
 else
-  echo "Warning: 'desk version' failed — check the install paths above." >&2
+  echo "Warning: 'desk version' failed — check the install output above." >&2
 fi
 echo "Done."

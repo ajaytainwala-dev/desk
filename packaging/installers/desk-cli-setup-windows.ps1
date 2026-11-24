@@ -54,36 +54,51 @@ if (-not $assetPath) {
 }
 
 $destExe = Join-Path $InstallDir "desk.exe"
-$shareRoot = Join-Path $env:LOCALAPPDATA "Desk"
-$tuiDest = Join-Path $shareRoot "bin\desk-tui.exe"
+$portableRoot = Join-Path $env:LOCALAPPDATA "Desk\portable"
 
 if ($assetPath -like "*.zip") {
   $extract = Join-Path $tmp "extract"
   Expand-Archive -Path $assetPath -DestinationPath $extract -Force
   $launcher = Get-ChildItem -Path $extract -Recurse -Filter "desk.cmd" | Select-Object -First 1
-  # Prefer a real native desk.exe (PE), not a shell script accidentally named desk.
-  $exe = Get-ChildItem -Path $extract -Recurse -Filter "desk.exe" |
-    Where-Object { $_.Length -gt 64KB } |
-    Select-Object -First 1
-  $bundledTui = Get-ChildItem -Path $extract -Recurse -Filter "desk-tui.exe" | Select-Object -First 1
-  if ($exe) {
-    Copy-Item $exe.FullName $destExe -Force
+  $exe = Get-ChildItem -Path $extract -Recurse -Filter "desk.exe" | Where-Object {
+    $_.Name -eq "desk.exe"
+  } | Select-Object -First 1
+  if ($exe -and (Test-Path (Join-Path $exe.Directory.FullName "..\runtime\bin\java.exe"))) {
+    # Native-looking layout that still has a portable runtime sibling — treat as portable.
+    $srcRoot = Split-Path $exe.Directory.FullName -Parent
+    if (Test-Path $portableRoot) { Remove-Item $portableRoot -Recurse -Force }
+    Copy-Item $srcRoot $portableRoot -Recurse -Force
   } elseif ($launcher) {
     # Portable jlink layout — keep under LocalAppData\Desk\portable
-    $portableRoot = Join-Path $shareRoot "portable"
     if (Test-Path $portableRoot) { Remove-Item $portableRoot -Recurse -Force }
     $srcRoot = Split-Path (Split-Path $launcher.FullName -Parent) -Parent
     Copy-Item $srcRoot $portableRoot -Recurse -Force
-    New-Item -ItemType Directory -Force -Path (Join-Path $shareRoot "bin") | Out-Null
+  } elseif ($exe) {
+    Copy-Item $exe.FullName $destExe -Force
+  } else {
+    throw "Zip did not contain desk.exe or desk.cmd"
+  }
+
+  if (Test-Path $portableRoot) {
+    # Ensure a TUI binary is present next to the portable launcher.
+    $bundledTui = Get-ChildItem -Path (Join-Path $portableRoot "bin") -Filter "desk-tui*" -ErrorAction SilentlyContinue |
+      Select-Object -First 1
+    if (-not $bundledTui) {
+      $tuiAsset = Try-Download "desk-tui-windows.exe"
+      if ($tuiAsset) {
+        Copy-Item $tuiAsset (Join-Path $portableRoot "bin\desk-tui.exe") -Force
+      } else {
+        Write-Warning "desk-tui-windows.exe not available — TUI launch may fail until it is installed."
+      }
+    }
+    $tuiPath = Join-Path $portableRoot "bin\desk-tui.exe"
     @"
 @echo off
-if not defined DESK_TUI if exist "%~dp0..\bin\desk-tui.exe" set "DESK_TUI=%~dp0..\bin\desk-tui.exe"
-if not defined DESK_TUI if exist "%~dp0..\portable\bin\desk-tui.exe" set "DESK_TUI=%~dp0..\portable\bin\desk-tui.exe"
+setlocal
+if not defined DESK_TUI if exist "$tuiPath" set "DESK_TUI=$tuiPath"
 "%~dp0..\portable\bin\desk.cmd" %*
 "@ | Set-Content -Encoding ASCII (Join-Path $InstallDir "desk.cmd")
     $destExe = Join-Path $InstallDir "desk.cmd"
-  } else {
-    throw "Zip did not contain desk.exe or desk.cmd"
   }
   if ($bundledTui) {
     New-Item -ItemType Directory -Force -Path (Split-Path $tuiDest -Parent) | Out-Null

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -18,10 +19,11 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Locates and launches the Rust {@code desk-tui} editor binary (Ratatui/Crossterm).
+ * Locates and launches the Rust {@code desk-tui} binary (Ratatui/Crossterm).
  *
- * <p>The CLI launcher script is also named {@code desk}; this class must never
- * treat that shell/batch wrapper as the TUI or it will recurse forever.</p>
+ * <p>The Java CLI launcher is also named {@code desk} on Unix. Candidates that are
+ * shell scripts or otherwise not a native binary are rejected so the CLI cannot
+ * re-exec itself in an infinite "launching desk TUI" loop.</p>
  */
 public final class TuiLauncher {
 
@@ -34,7 +36,7 @@ public final class TuiLauncher {
     Path editorBinary = locateEditorBinary();
     if (editorBinary == null) {
       System.err.println("error: desk TUI binary not found.");
-      System.err.println("       Install desk-tui from the release, set DESK_TUI, or build with:");
+      System.err.println("       Install desk-tui next to the CLI, set DESK_TUI, or build with:");
       System.err.println("       cargo build --release --manifest-path modules/desk-tui/Cargo.toml");
       return 1;
     }
@@ -68,21 +70,21 @@ public final class TuiLauncher {
   }
 
   /**
-   * Locates the Rust TUI binary. Prefers {@code desk-tui} / {@code DESK_TUI},
-   * then a native {@code desk} binary — never a shell/batch launcher.
+   * Locates a native Desk TUI binary ({@code desk-tui} preferred, then {@code desk}).
    */
   public static Path locateEditorBinary() {
     String envPath = System.getenv("DESK_TUI");
     if (envPath != null && !envPath.isBlank()) {
       Path fromEnv = Paths.get(envPath);
-      if (isUsableTuiBinary(fromEnv)) {
+      if (isNativeTuiBinary(fromEnv)) {
         return fromEnv.toAbsolutePath().normalize();
       }
+      LOG.warn("DESK_TUI is set but is not a usable TUI binary: {}", fromEnv);
     }
 
     Path newest = null;
     for (Path candidate : candidatePaths()) {
-      if (!isUsableTuiBinary(candidate)) {
+      if (!isNativeTuiBinary(candidate)) {
         continue;
       }
       if (newest == null) {
@@ -102,131 +104,131 @@ public final class TuiLauncher {
   }
 
   static List<Path> candidatePaths() {
-    Set<Path> paths = new LinkedHashSet<>();
+    Set<Path> candidates = new LinkedHashSet<>();
     String tuiName = isWindows() ? "desk-tui.exe" : "desk-tui";
-    String deskName = isWindows() ? "desk.exe" : "desk";
+    String legacyName = isWindows() ? "desk.exe" : "desk";
 
-    // Preferred stable name next to common install / build layouts
-    for (String name : List.of(tuiName, deskName)) {
-      paths.add(Paths.get("modules/desk-tui/target/release").resolve(name));
-      paths.add(Paths.get("modules/desk-tui/target/release-next/release").resolve(name));
-      paths.add(Paths.get("modules/desk-tui/target/debug").resolve(name));
-      paths.add(Paths.get("bin").resolve(name));
-      paths.add(Paths.get(".").resolve(name));
+    for (Path dir : searchDirectories()) {
+      candidates.add(dir.resolve(tuiName));
+      candidates.add(dir.resolve(legacyName));
+    }
+    return new ArrayList<>(candidates);
+  }
+
+  private static List<Path> searchDirectories() {
+    Set<Path> dirs = new LinkedHashSet<>();
+
+    // Dev / checkout layouts
+    dirs.add(Paths.get("modules/desk-tui/target/release"));
+    dirs.add(Paths.get("modules/desk-tui/target/release-next/release"));
+    dirs.add(Paths.get("modules/desk-tui/target/debug"));
+    dirs.add(Paths.get("bin"));
+    dirs.add(Paths.get("."));
+
+    // Next to the running CLI JAR (portable: lib/../bin)
+    Path jarDir = locateRunningJarDirectory();
+    if (jarDir != null) {
+      dirs.add(jarDir.resolveSibling("bin"));
+      dirs.add(jarDir);
+      Path parent = jarDir.getParent();
+      if (parent != null) {
+        dirs.add(parent.resolve("bin"));
+      }
     }
 
-    Path home = Paths.get(System.getProperty("user.home", "."));
+    // CLI setup share layout (~/.local/share/desk/portable/bin)
     String xdg = System.getenv("XDG_DATA_HOME");
     Path dataHome = (xdg != null && !xdg.isBlank())
         ? Paths.get(xdg)
-        : home.resolve(".local").resolve("share");
-    Path localAppData = System.getenv("LOCALAPPDATA") != null
-        ? Paths.get(System.getenv("LOCALAPPDATA"))
-        : null;
+        : Paths.get(System.getProperty("user.home"), ".local", "share");
+    dirs.add(dataHome.resolve("desk").resolve("portable").resolve("bin"));
+    dirs.add(dataHome.resolve("desk").resolve("bin"));
 
-    for (String name : List.of(tuiName, deskName)) {
-      paths.add(dataHome.resolve("desk").resolve("bin").resolve(name));
-      paths.add(dataHome.resolve("desk").resolve("portable").resolve("bin").resolve(name));
-      if (localAppData != null) {
-        paths.add(localAppData.resolve("Desk").resolve("bin").resolve(name));
-        paths.add(localAppData.resolve("Desk").resolve("portable").resolve("bin").resolve(name));
+    if (isWindows()) {
+      String localAppData = System.getenv("LOCALAPPDATA");
+      if (localAppData != null && !localAppData.isBlank()) {
+        dirs.add(Paths.get(localAppData, "Desk", "portable", "bin"));
+        dirs.add(Paths.get(localAppData, "Desk", "bin"));
       }
     }
 
-    // Relative to the running uber-JAR: lib/… → ../bin/desk-tui
-    Path jarDir = codeSourceDirectory();
-    if (jarDir != null) {
-      Path distRoot = jarDir.getFileName() != null
-          && "lib".equalsIgnoreCase(jarDir.getFileName().toString())
-          ? jarDir.getParent()
-          : jarDir;
-      if (distRoot != null) {
-        for (String name : List.of(tuiName, deskName)) {
-          paths.add(distRoot.resolve("bin").resolve(name));
-          paths.add(distRoot.resolve(name));
-        }
-      }
-    }
-
-    return List.copyOf(paths);
+    return new ArrayList<>(dirs);
   }
 
   /**
-   * True when {@code path} is a real native TUI binary (ELF / Mach-O / PE),
-   * not a {@code #!} shell launcher or {@code @echo} batch wrapper.
+   * Returns true when {@code path} is a regular file that looks like a native
+   * executable (ELF / Mach-O / PE), not a shell/batch launcher script.
    */
-  static boolean isUsableTuiBinary(Path path) {
+  static boolean isNativeTuiBinary(Path path) {
     if (path == null || !FileSystem.isFile(path)) {
       return false;
     }
-    try {
-      if (!Files.isExecutable(path) && !isWindows()) {
-        // Some filesystems omit +x; still accept native binaries.
-        if (!looksLikeNativeBinary(path)) {
-          return false;
+    if (!Files.isReadable(path)) {
+      return false;
+    }
+    try (InputStream in = Files.newInputStream(path)) {
+      byte[] header = in.readNBytes(8);
+      if (header.length == 0) {
+        return false;
+      }
+      // Reject shebang scripts (`#!/bin/sh`, etc.) and `@echo` batch wrappers.
+      if (header[0] == '#' && header.length > 1 && header[1] == '!') {
+        return false;
+      }
+      String asText = new String(header, StandardCharsets.US_ASCII);
+      if (asText.regionMatches(true, 0, "@echo", 0, 5)
+          || asText.regionMatches(true, 0, "rem ", 0, 4)) {
+        return false;
+      }
+      // ELF
+      if (header.length >= 4
+          && header[0] == 0x7f
+          && header[1] == 'E'
+          && header[2] == 'L'
+          && header[3] == 'F') {
+        return true;
+      }
+      // PE / Windows (MZ)
+      if (header.length >= 2 && header[0] == 'M' && header[1] == 'Z') {
+        return true;
+      }
+      // Mach-O (32/64, endian variants) and Java class files are uncommon here;
+      // accept common Mach-O magics used on macOS.
+      if (header.length >= 4) {
+        int magic = ((header[0] & 0xff) << 24)
+            | ((header[1] & 0xff) << 16)
+            | ((header[2] & 0xff) << 8)
+            | (header[3] & 0xff);
+        if (magic == 0xFEEDFACE || magic == 0xFEEDFACF
+            || magic == 0xCEFAEDFE || magic == 0xCFFAEDFE
+            || magic == 0xCAFEBABE || magic == 0xBEBAFECA) {
+          return true;
         }
       }
-      return looksLikeNativeBinary(path);
+      return false;
     } catch (IOException e) {
-      LOG.debug("cannot inspect TUI candidate {}: {}", path, e.toString());
+      LOG.debug("cannot inspect candidate TUI binary {}: {}", path, e.toString());
       return false;
     }
   }
 
-  static boolean looksLikeNativeBinary(Path path) throws IOException {
-    try (InputStream in = Files.newInputStream(path)) {
-      byte[] magic = in.readNBytes(4);
-      if (magic.length < 2) {
-        return false;
-      }
-      // Reject shebang scripts (#!/bin/sh launcher)
-      if (magic[0] == '#' && magic[1] == '!') {
-        return false;
-      }
-      // Reject Windows batch wrappers (@echo / REM)
-      if (magic[0] == '@' || (magic[0] == 'R' && magic.length >= 3 && magic[1] == 'E' && magic[2] == 'M')) {
-        return false;
-      }
-      if (magic.length < 4) {
-        return false;
-      }
-      // ELF
-      if (magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F') {
-        return true;
-      }
-      // MZ / PE
-      if (magic[0] == 'M' && magic[1] == 'Z') {
-        return true;
-      }
-      int be = ((magic[0] & 0xff) << 24)
-          | ((magic[1] & 0xff) << 16)
-          | ((magic[2] & 0xff) << 8)
-          | (magic[3] & 0xff);
-      int le = Integer.reverseBytes(be);
-      // Mach-O 32/64 and fat
-      return be == 0xFEEDFACE || be == 0xFEEDFACF || be == 0xCAFEBABE
-          || le == 0xFEEDFACE || le == 0xFEEDFACF || be == 0xBEBAFECA;
-    }
-  }
-
-  private static Path codeSourceDirectory() {
+  private static Path locateRunningJarDirectory() {
     try {
-      CodeSource cs = TuiLauncher.class.getProtectionDomain().getCodeSource();
-      if (cs == null) {
+      URL location = TuiLauncher.class.getProtectionDomain().getCodeSource().getLocation();
+      if (location == null) {
         return null;
       }
-      URL loc = cs.getLocation();
-      if (loc == null) {
-        return null;
-      }
-      Path path = Paths.get(loc.toURI());
+      Path path = Paths.get(location.toURI());
       if (Files.isRegularFile(path)) {
         return path.getParent();
       }
-      return path;
-    } catch (URISyntaxException e) {
-      return null;
+      if (Files.isDirectory(path)) {
+        return path;
+      }
+    } catch (URISyntaxException | IllegalArgumentException | SecurityException e) {
+      LOG.debug("cannot resolve running jar directory: {}", e.toString());
     }
+    return null;
   }
 
   private static boolean isWindows() {

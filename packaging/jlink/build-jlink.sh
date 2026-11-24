@@ -119,19 +119,15 @@ if [ -z "$UBER_JAR" ]; then
   exit 1
 fi
 
-# Stable name so the launcher does not hard-code the Maven version.
+# Stable jar name so launchers and the TUI (DESK_JAR / lib lookup) stay in sync.
 cp "$UBER_JAR" "$LIB_DIR/desk-cli.jar"
 echo "Copied: $(basename "$UBER_JAR") -> desk-cli.jar"
 
-# Optional Rust TUI (named desk-tui so it never collides with the CLI launcher).
+# Optional: bundle a prebuilt TUI binary as bin/desk-tui (set DESK_TUI_BINARY).
 if [ -n "${DESK_TUI_BINARY:-}" ] && [ -f "$DESK_TUI_BINARY" ]; then
   cp "$DESK_TUI_BINARY" "$BIN_DIR/desk-tui"
   chmod +x "$BIN_DIR/desk-tui"
   echo "Bundled TUI: $BIN_DIR/desk-tui"
-elif [ -f "$REPO_ROOT/modules/desk-tui/target/release/desk" ]; then
-  cp "$REPO_ROOT/modules/desk-tui/target/release/desk" "$BIN_DIR/desk-tui"
-  chmod +x "$BIN_DIR/desk-tui"
-  echo "Bundled TUI from cargo release build"
 fi
 
 # Step 6: Create launch scripts
@@ -144,7 +140,11 @@ cat > "$BIN_DIR/desk" << 'LAUNCHER'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
 APP_JAR="$SCRIPT_DIR/../lib/desk-cli.jar"
-TUI_BIN="$SCRIPT_DIR/desk-tui"
+# Prefer a bundled native TUI over re-executing this shell script.
+if [ -z "${DESK_TUI:-}" ] && [ -x "$SCRIPT_DIR/desk-tui" ]; then
+  DESK_TUI="$SCRIPT_DIR/desk-tui"
+  export DESK_TUI
+fi
 
 if [ ! -x "$RUNTIME_JAVA" ]; then
   echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
@@ -176,9 +176,9 @@ Desk application. No system Java installation is required.
 Directory layout:
   bin/
     desk        - Shell launcher (Git Bash, WSL, Linux, macOS)
-    desk-tui    - Rust TUI editor (when bundled)
+    desk-tui    - Native TUI editor (when bundled)
   lib/
-    desk-cli.jar     - Application JAR (all dependencies embedded)
+    desk-cli.jar   - Application JAR (all dependencies embedded)
   runtime/
     Custom JRE (jlink image) - contains only the JDK modules needed by Desk
   config/
