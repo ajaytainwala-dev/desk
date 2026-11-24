@@ -119,8 +119,20 @@ if [ -z "$UBER_JAR" ]; then
   exit 1
 fi
 
-cp "$UBER_JAR" "$LIB_DIR/"
-echo "Copied: $(basename "$UBER_JAR")"
+# Stable name so the launcher does not hard-code the Maven version.
+cp "$UBER_JAR" "$LIB_DIR/desk-cli.jar"
+echo "Copied: $(basename "$UBER_JAR") -> desk-cli.jar"
+
+# Optional Rust TUI (named desk-tui so it never collides with the CLI launcher).
+if [ -n "${DESK_TUI_BINARY:-}" ] && [ -f "$DESK_TUI_BINARY" ]; then
+  cp "$DESK_TUI_BINARY" "$BIN_DIR/desk-tui"
+  chmod +x "$BIN_DIR/desk-tui"
+  echo "Bundled TUI: $BIN_DIR/desk-tui"
+elif [ -f "$REPO_ROOT/modules/desk-tui/target/release/desk" ]; then
+  cp "$REPO_ROOT/modules/desk-tui/target/release/desk" "$BIN_DIR/desk-tui"
+  chmod +x "$BIN_DIR/desk-tui"
+  echo "Bundled TUI from cargo release build"
+fi
 
 # Step 6: Create launch scripts
 echo ""
@@ -131,7 +143,8 @@ cat > "$BIN_DIR/desk" << 'LAUNCHER'
 # Desk launcher
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_JAVA="$SCRIPT_DIR/../runtime/bin/java"
-APP_JAR="$SCRIPT_DIR/../lib/desk-cli-0.1.0-SNAPSHOT.jar"
+APP_JAR="$SCRIPT_DIR/../lib/desk-cli.jar"
+TUI_BIN="$SCRIPT_DIR/desk-tui"
 
 if [ ! -x "$RUNTIME_JAVA" ]; then
   echo "Error: runtime Java not found at $RUNTIME_JAVA" >&2
@@ -141,6 +154,11 @@ fi
 if [ ! -f "$APP_JAR" ]; then
   echo "Error: application JAR not found at $APP_JAR" >&2
   exit 1
+fi
+
+# Prefer the bundled editor when DESK_TUI is unset.
+if [ -z "${DESK_TUI:-}" ] && [ -x "$TUI_BIN" ]; then
+  export DESK_TUI="$TUI_BIN"
 fi
 
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
@@ -158,8 +176,9 @@ Desk application. No system Java installation is required.
 Directory layout:
   bin/
     desk        - Shell launcher (Git Bash, WSL, Linux, macOS)
+    desk-tui    - Rust TUI editor (when bundled)
   lib/
-    desk-cli-*.jar   - Application JAR (all dependencies embedded)
+    desk-cli.jar     - Application JAR (all dependencies embedded)
   runtime/
     Custom JRE (jlink image) - contains only the JDK modules needed by Desk
   config/
@@ -169,19 +188,12 @@ Usage:
   Linux/macOS: bin/desk [command] [args]
   Git Bash:    ./bin/desk [command] [args]
 
-Available commands:
-  version  - Print the application version
-  help     - Print available commands
-  edit     - Open a file in the terminal editor
-  fmt      - Format a Java source file (use --check to verify)
-  compile  - Compile a Java source file
-  run      - Run a compiled Java class
-
 Examples:
+  bin/desk              # interactive TUI (requires desk-tui)
   bin/desk version
+  bin/desk help
   bin/desk fmt src/Main.java
-  bin/desk compile src/Main.java
-  bin/desk run Main
+  bin/desk java list
 
 No installation required: extract this archive anywhere and run the launcher.
 README
