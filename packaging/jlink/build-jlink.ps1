@@ -165,6 +165,15 @@ Write-Host "All dependencies are embedded in the uber JAR."
 # Step 6: Create launch scripts
 Write-Host "`nCreating launch scripts..." -ForegroundColor Cyan
 
+# Optional Rust TUI (desk-tui.exe) — never overwrite the CLI launcher named desk.
+if ($env:DESK_TUI_BINARY -and (Test-Path $env:DESK_TUI_BINARY)) {
+  Copy-Item $env:DESK_TUI_BINARY (Join-Path $BinDir "desk-tui.exe") -Force
+  Write-Host "Bundled TUI: $(Join-Path $BinDir 'desk-tui.exe')"
+} elseif (Test-Path "$RepoRoot\modules\desk-tui\target\release\desk.exe") {
+  Copy-Item "$RepoRoot\modules\desk-tui\target\release\desk.exe" (Join-Path $BinDir "desk-tui.exe") -Force
+  Write-Host "Bundled TUI from cargo release build"
+}
+
 # Shell launcher (for Git Bash, WSL, etc.)
 $launchShell = @'
 #!/bin/sh
@@ -188,6 +197,10 @@ fi
 if [ ! -f "$APP_JAR" ]; then
   echo "Error: application JAR not found at $APP_JAR" >&2
   exit 1
+fi
+
+if [ -z "${DESK_TUI:-}" ] && [ -x "$TUI_BIN" ]; then
+  export DESK_TUI="$TUI_BIN"
 fi
 
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
@@ -214,6 +227,8 @@ if not exist "%APP_JAR%" (
     echo Error: application JAR not found at %APP_JAR% >&2
     exit /b 1
 )
+
+if not defined DESK_TUI if exist "%TUI_BIN%" set "DESK_TUI=%TUI_BIN%"
 
 "%RUNTIME_JAVA%" -jar "%APP_JAR%" %*
 "@

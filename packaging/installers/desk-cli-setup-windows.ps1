@@ -100,6 +100,14 @@ if not defined DESK_TUI if exist "$tuiPath" set "DESK_TUI=$tuiPath"
 "@ | Set-Content -Encoding ASCII (Join-Path $InstallDir "desk.cmd")
     $destExe = Join-Path $InstallDir "desk.cmd"
   }
+  if ($bundledTui) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $tuiDest -Parent) | Out-Null
+    Copy-Item $bundledTui.FullName $tuiDest -Force
+    if (Test-Path (Join-Path $shareRoot "portable\bin")) {
+      Copy-Item $bundledTui.FullName (Join-Path $shareRoot "portable\bin\desk-tui.exe") -Force
+    }
+    Write-Host "Installed TUI: $tuiDest"
+  }
 } elseif ($assetPath -like "*.exe" -and (Split-Path $assetPath -Leaf) -like "Desk-Setup*") {
   Write-Host "Launching GUI installer…"
   Start-Process -FilePath $assetPath -Wait
@@ -107,6 +115,22 @@ if not defined DESK_TUI if exist "$tuiPath" set "DESK_TUI=$tuiPath"
   exit 0
 } else {
   Copy-Item $assetPath $destExe -Force
+}
+
+# Fetch standalone TUI when the portable zip did not already include it.
+if (-not (Test-Path $tuiDest)) {
+  Write-Host "Trying desk-tui-windows.exe…"
+  $tuiPath = Try-Download "desk-tui-windows.exe"
+  if ($tuiPath) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $tuiDest -Parent) | Out-Null
+    Copy-Item $tuiPath $tuiDest -Force
+    if (Test-Path (Join-Path $shareRoot "portable\bin")) {
+      Copy-Item $tuiPath (Join-Path $shareRoot "portable\bin\desk-tui.exe") -Force
+    }
+    Write-Host "Installed TUI: $tuiDest"
+  } else {
+    Write-Host "Warning: desk-tui-windows.exe not found — interactive 'desk' needs DESK_TUI." -ForegroundColor Yellow
+  }
 }
 
 # User PATH

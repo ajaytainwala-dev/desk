@@ -156,6 +156,11 @@ if [ ! -f "$APP_JAR" ]; then
   exit 1
 fi
 
+# Prefer the bundled editor when DESK_TUI is unset.
+if [ -z "${DESK_TUI:-}" ] && [ -x "$TUI_BIN" ]; then
+  export DESK_TUI="$TUI_BIN"
+fi
+
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
 LAUNCHER
 chmod +x "$BIN_DIR/desk"
@@ -183,19 +188,12 @@ Usage:
   Linux/macOS: bin/desk [command] [args]
   Git Bash:    ./bin/desk [command] [args]
 
-Available commands:
-  version  - Print the application version
-  help     - Print available commands
-  edit     - Open a file in the terminal editor
-  fmt      - Format a Java source file (use --check to verify)
-  compile  - Compile a Java source file
-  run      - Run a compiled Java class
-
 Examples:
+  bin/desk              # interactive TUI (requires desk-tui)
   bin/desk version
+  bin/desk help
   bin/desk fmt src/Main.java
-  bin/desk compile src/Main.java
-  bin/desk run Main
+  bin/desk java list
 
 No installation required: extract this archive anywhere and run the launcher.
 README

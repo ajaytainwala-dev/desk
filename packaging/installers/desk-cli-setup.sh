@@ -62,7 +62,6 @@ echo "Latest release: $TAG"
 CANDIDATES=(
   "desk-portable-${PLATFORM}.zip"
   "desk-native-${PLATFORM}"
-  "desk-tui-${PLATFORM}"
 )
 if [ "$PLATFORM" = "linux" ]; then
   CANDIDATES+=("desk-portable.zip" "desk")
@@ -77,6 +76,43 @@ download_asset() {
     return 0
   fi
   return 1
+}
+
+# Locate the portable distribution root inside an extracted zip.
+# Handles both flat layouts (bin/desk) and nested (desk-portable/bin/desk).
+find_portable_root() {
+  local extract_dir="$1"
+  local launcher
+  launcher="$(find "$extract_dir" -type f \( -name desk -o -name desk.cmd \) 2>/dev/null | head -1 || true)"
+  if [ -z "$launcher" ]; then
+    return 1
+  fi
+  local bin_dir root
+  bin_dir="$(cd "$(dirname "$launcher")" && pwd)"
+  root="$(cd "$bin_dir/.." && pwd)"
+  if [ -d "$root/runtime" ] || [ -d "$root/lib" ]; then
+    printf '%s\n' "$root"
+    return 0
+  fi
+  return 1
+}
+
+install_portable_root() {
+  local root="$1"
+  local portable="$SHARE_DIR/portable"
+  echo "Installing portable runtime to $portable…"
+  rm -rf "$portable"
+  mkdir -p "$SHARE_DIR"
+  cp -R "$root" "$portable"
+  # Ensure launcher is executable
+  chmod +x "$portable/bin/desk" 2>/dev/null || true
+  cat > "$INSTALL_DIR/desk" << EOF
+#!/bin/sh
+# Desk CLI wrapper — forwards to the portable jlink distribution.
+export DESK_TUI="\${DESK_TUI:-$SHARE_DIR/bin/desk-tui}"
+exec "$portable/bin/desk" "\$@"
+EOF
+  chmod +x "$INSTALL_DIR/desk"
 }
 
 ASSET=""
