@@ -435,11 +435,7 @@ fn jdtls_exe_names() -> Vec<&'static str> {
 
 /// PATH list separators for the current OS.
 fn path_separators() -> &'static [char] {
-    if cfg!(windows) {
-        &[';']
-    } else {
-        &[':']
-    }
+    if cfg!(windows) { &[';'] } else { &[':'] }
 }
 
 fn discover_server() -> Option<PathBuf> {
