@@ -1896,7 +1896,7 @@ impl App {
         // Strip any existing space before `{` and newline before `}` so the
         // re-insertion below is idempotent: repeated format calls do not
         // accumulate extra spaces or blank lines.
-        let prepped = normalized.replace(' {', "{").replace('\n}', "}");
+        let prepped = normalized.replace(" {", "{").replace("\n}", "}");
         let with_breaks = prepped.replace('{', " {\n").replace('}', "\n}");
 
         let mut depth = 0usize;
