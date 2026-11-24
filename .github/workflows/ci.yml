@@ -77,7 +77,7 @@ jobs:
           java-version: '25'
           cache: maven
       - name: Verify Maven Wrapper
-        run: bash mvnw -v
+        run: bash .github/scripts/mvnw-retry.sh -v
       - name: Compile all modules
         run: bash mvnw -q -B compile
       - name: Run unit tests
