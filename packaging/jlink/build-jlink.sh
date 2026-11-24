@@ -156,11 +156,6 @@ if [ ! -f "$APP_JAR" ]; then
   exit 1
 fi
 
-# Prefer the bundled editor when DESK_TUI is unset.
-if [ -z "${DESK_TUI:-}" ] && [ -x "$TUI_BIN" ]; then
-  export DESK_TUI="$TUI_BIN"
-fi
-
 exec "$RUNTIME_JAVA" -jar "$APP_JAR" "$@"
 LAUNCHER
 chmod +x "$BIN_DIR/desk"

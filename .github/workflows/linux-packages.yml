@@ -1,0 +1,177 @@
+name: Linux Packages
+
+# Builds downloadable .rpm and .deb packages for Linux from the portable
+# jlink distribution. Runs on pushes to main, tags, and manually.
+
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+    paths:
+      - 'modules/**'
+      - 'pom.xml'
+      - 'mvnw'
+      - 'mvnw.cmd'
+      - '.mvn/**'
+      - 'packaging/**'
+      - '.github/workflows/linux-packages.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/scripts/**'
+  pull_request:
+    branches: ['main']
+    paths:
+      - 'modules/**'
+      - 'pom.xml'
+      - 'mvnw'
+      - 'mvnw.cmd'
+      - '.mvn/**'
+      - 'packaging/**'
+      - '.github/workflows/linux-packages.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/scripts/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g. 0.1.0). Defaults to git describe.'
+        required: false
+        type: string
+
+concurrency:
+  group: linux-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-packages:
+    name: Build .rpm and .deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust compile artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modules/desk-tui -> target
+          shared-key: desk-tui-linux-packages
+          cache-on-failure: true
+
+      - name: Resolve package version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${VERSION#v}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            VERSION="${TAG#v}"
+          else
+            VERSION=$(git describe --tags --always --match 'v*' 2>/dev/null | sed 's/^v//' || echo "0.1.0")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Package version: $VERSION"
+
+      - name: Build Java modules and CLI uber JAR
+        run: bash mvnw -B -q -DskipTests package
+
+      - name: Build Rust TUI editor (release)
+        working-directory: modules/desk-tui
+        run: cargo build --release
+
+      - name: Build jlink portable distribution (with TUI)
+        env:
+          DESK_SKIP_MVN: "1"
+          DESK_TUI_BINARY: modules/desk-tui/target/release/desk
+        run: |
+          bash packaging/jlink/build-jlink.sh dist/desk-portable
+          test -x dist/desk-portable/bin/desk
+          test -x dist/desk-portable/bin/desk-tui
+
+      - name: Install fpm (package builder)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ruby-dev gcc make
+          sudo gem install fpm --no-document
+
+      - name: Stage package root
+        run: |
+          rm -rf dist/stage
+          mkdir -p dist/stage/usr/bin dist/stage/usr/share/desk
+
+          # Copy the entire portable distribution into /usr/share/desk
+          cp -a dist/desk-portable/. dist/stage/usr/share/desk/
+
+          # Create a /usr/bin/desk wrapper that calls the portable launcher.
+          cat > dist/stage/usr/bin/desk << 'WRAPPER'
+#!/bin/sh
+exec /usr/share/desk/bin/desk "$@"
+WRAPPER
+          chmod +x dist/stage/usr/bin/desk
+
+          # Make sure the portable launcher is executable.
+          chmod +x dist/stage/usr/share/desk/bin/desk
+          chmod +x dist/stage/usr/share/desk/bin/desk-tui 2>/dev/null || true
+
+          find dist/stage -type f | sort
+
+      - name: Build .deb package
+        run: |
+          fpm -s dir -t deb \
+            -n desk \
+            -v "${{ steps.version.outputs.version }}" \
+            -m "Desk Team <desk@ajaytainwala.dev>" \
+            --description "Desk — a lightweight cross-platform Java development workbench (TUI editor, CLI, formatter, build orchestration)" \
+            --license MIT \
+            --url "https://github.com/ajaytainwala-dev/desk" \
+            --category development \
+            --deb-no-lzma \
+            -C dist/stage \
+            usr/bin/desk \
+            usr/share/desk
+
+      - name: Build .rpm package
+        run: |
+          fpm -s dir -t rpm \
+            -n desk \
+            -v "${{ steps.version.outputs.version }}" \
+            -m "Desk Team <desk@ajaytainwala.dev>" \
+            --description "Desk — a lightweight cross-platform Java development workbench (TUI editor, CLI, formatter, build orchestration)" \
+            --license MIT \
+            --url "https://github.com/ajaytainwala-dev/desk" \
+            --category "Development/Tools" \
+            -C dist/stage \
+            usr/bin/desk \
+            usr/share/desk
+
+      - name: Rename packages with platform and version
+        run: |
+          mkdir -p dist/packages
+          cp dist/desk_*_amd64.deb dist/packages/desk-${{ steps.version.outputs.version }}-linux-amd64.deb 2>/dev/null || true
+          cp dist/desk-*.x86_64.rpm dist/packages/desk-${{ steps.version.outputs.version }}-linux-x86_64.rpm 2>/dev/null || true
+          ls -lh dist/packages/
+
+      - name: Upload .deb and .rpm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-linux-packages
+          path: dist/packages/*
+          if-no-files-found: error
+          retention-days: 90

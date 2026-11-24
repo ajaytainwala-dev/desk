@@ -1880,6 +1880,11 @@ impl App {
         }
     }
 
+    /// Basic Java formatter used as a fallback when the Desk CLI JAR is
+    /// unavailable. Unlike the previous implementation, this is idempotent:
+    /// running it on already-formatted source produces the same output, so
+    /// clicking Format repeatedly does not keep adding indentation or blank
+    /// lines.
     fn format_java_basic(source: &str, tab_width: usize, use_spaces: bool) -> String {
         let unit = if use_spaces {
             " ".repeat(tab_width)
@@ -1887,24 +1892,35 @@ impl App {
             "\t".to_string()
         };
         let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
-        let expanded = normalized.replace('{', " {\n").replace('}', "\n}");
+
+        // Strip any existing space before `{` and newline before `}` so the
+        // re-insertion below is idempotent: repeated format calls do not
+        // accumulate extra spaces or blank lines.
+        let prepped = normalized.replace(' {', "{").replace('\n}', "}");
+        let with_breaks = prepped.replace('{', " {\n").replace('}', "\n}");
+
         let mut depth = 0usize;
-        let mut out = Vec::new();
-        for raw in expanded.lines() {
+        let mut out: Vec<String> = Vec::new();
+
+        for raw in with_breaks.lines() {
             let line = raw.trim();
             if line.is_empty() {
-                out.push(String::new());
                 continue;
             }
-            let opens = line.chars().filter(|&c| c == '{').count();
-            let closes = line.chars().filter(|&c| c == '}').count();
+
             let leading_closes = line.chars().take_while(|&c| c == '}').count();
             let indent = depth.saturating_sub(leading_closes);
+
+            let rest = &line[leading_closes..];
+            let opens = rest.chars().filter(|&c| c == '{').count();
+            let closes = rest.chars().filter(|&c| c == '}').count();
+
             out.push(format!("{}{}", unit.repeat(indent), line));
             depth = depth.saturating_add(opens).saturating_sub(closes);
         }
+
         let formatted = out.join("\n");
-        if normalized.ends_with('\n') {
+        if normalized.ends_with('\n') && !formatted.is_empty() {
             format!("{}\n", formatted)
         } else {
             formatted
