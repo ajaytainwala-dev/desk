@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-24T18:21:27.619Z",
+  "updatedAt": "2026-11-24T18:48:36.124Z",
   "tag": "v0.1.0",
   "name": "Desk v0.1.0",
   "publishedAt": "2026-11-20T18:15:20Z",
@@ -28,7 +28,7 @@
     {
       "name": "desk-portable-linux.zip",
       "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-linux.zip",
-      "size": 43822543
+      "size": 43822577
     },
     {
       "name": "desk-portable-linux.zip.sha256",
@@ -38,7 +38,7 @@
     {
       "name": "desk-portable-macos.zip",
       "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-macos.zip",
-      "size": 38873617
+      "size": 38873624
     },
     {
       "name": "desk-portable-macos.zip.sha256",
@@ -48,7 +48,7 @@
     {
       "name": "desk-portable-windows.zip",
       "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-windows.zip",
-      "size": 40536252
+      "size": 40536261
     },
     {
       "name": "desk-portable-windows.zip.sha256",
@@ -68,7 +68,7 @@
     {
       "name": "Desk-Setup-0.1.0.exe",
       "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/Desk-Setup-0.1.0.exe",
-      "size": 36531881
+      "size": 36531135
     },
     {
       "name": "Desk-Setup-0.1.0.exe.sha256",
@@ -111,7 +111,7 @@
       "windows-gui": {
         "name": "Desk-Setup-0.1.0.exe",
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/Desk-Setup-0.1.0.exe",
-        "size": 36531881
+        "size": 36531135
       },
       "windows-cli": {
         "name": "desk-cli-setup-windows.ps1",
@@ -121,7 +121,7 @@
       "portable-zip": {
         "name": "desk-portable-windows.zip",
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-windows.zip",
-        "size": 40536252
+        "size": 40536261
       },
       "tui": {
         "name": "desk-tui-windows.exe",
@@ -138,7 +138,7 @@
       "portable-zip": {
         "name": "desk-portable-macos.zip",
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-macos.zip",
-        "size": 38873617
+        "size": 38873624
       },
       "tui": {
         "name": "desk-tui-macos",
@@ -155,7 +155,7 @@
       "portable-zip": {
         "name": "desk-portable-linux.zip",
         "url": "https://github.com/ajaytainwala-dev/desk/releases/download/v0.1.0/desk-portable-linux.zip",
-        "size": 43822543
+        "size": 43822577
       },
       "tui": {
         "name": "desk-tui-linux",
